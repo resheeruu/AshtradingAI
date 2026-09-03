@@ -82,6 +82,13 @@ class Config:
     AI_FALLBACK_API_KEY: str = os.getenv("AI_FALLBACK_API_KEY", "")
     AI_FALLBACK_BASE_URL: str = os.getenv("AI_FALLBACK_BASE_URL", "")
 
+    # Milestone 5: Paper-Live configuration
+    PAPER_SESSION_ID: str = os.getenv("PAPER_SESSION_ID", "")
+    PAPER_AUTO_RESUME: bool = _bool(os.getenv("PAPER_AUTO_RESUME", "true"), True)
+    MARKET_MAX_STALE_SECONDS: int = _int(os.getenv("MARKET_MAX_STALE_SECONDS", "300"), 300)
+    MARKET_RETRY_SECONDS: int = _int(os.getenv("MARKET_RETRY_SECONDS", "30"), 30)
+    PAPER_HEARTBEAT_SECONDS: int = _int(os.getenv("PAPER_HEARTBEAT_SECONDS", "300"), 300)
+
     @classmethod
     def validate(cls) -> list[str]:
         """Return list of validation errors. Empty list means OK."""

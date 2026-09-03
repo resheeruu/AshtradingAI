@@ -26,7 +26,9 @@ python bot.py --mode paper               # Paper trading demo
 python bot.py --mode leaderboard         # Multi-AI competition
 python bot.py --mode tournament          # Full tournament with audit trail
 python bot.py --mode tournament-backtest # Tournament backtest with test strategies
-python scripts/smoke_test.py             # 12-test verification
+python bot.py --mode paper-live          # Paper-live: real market data + simulated execution
+python bot.py --mode paper-live-test     # Deterministic test of full pipeline
+python scripts/smoke_test.py             # Verification tests
 ```
 
 ## Tournament Architecture
@@ -341,10 +343,21 @@ Shows:
 ## Dependencies
 
 - `python-dotenv` — environment variable loading
-- `requests` — HTTP client (for optional live market data)
+- `requests` — HTTP client (for live market data via CCXT REST API)
 - Python 3.10+ standard library (including sqlite3)
 
 No numpy, pandas, or heavy ML frameworks. Bounded memory usage.
+
+### Market Data Implementation
+
+Live market data is fetched via CCXT's public REST API using the `requests` library directly (not the CCXT Python package). The implementation:
+
+- Uses `https://api.ccxt.com/{exchange}/fetchOHLCV` endpoint
+- Supports pagination for large candle limits
+- Includes retry with exponential backoff
+- Handles rate limiting (429 responses)
+- Validates all candles (OHLC consistency, chronological order, no duplicates)
+- No dependency on the CCXT Python package
 
 ## Configuration Reference
 
@@ -406,6 +419,50 @@ ANTHROPIC_API_KEY=
 - AI API responses introduce non-determinism between runs
 - Single-threaded execution (sufficient for current scale)
 - SQLite is single-writer (adequate for tournament use)
+
+## Paper-Live Mode (Milestone 5)
+
+Real market data + AI decisions + simulated execution. No real orders.
+
+### Quick Start
+
+```bash
+python bot.py --mode paper-live          # Start paper-live session
+python bot.py --mode paper-live-test     # Run deterministic pipeline test
+python bot.py --mode status              # View session status
+```
+
+### Features
+
+- **Real Market Data**: Fetches live OHLCV candles via CCXT REST API
+- **Completed-Candle Scheduler**: Only processes candles after they complete
+- **No Lookahead**: AI sees only candles <= current timestamp
+- **Stale Data Protection**: Refuses to trade on stale market data
+- **Restart Recovery**: Resumes existing session from SQLite on restart
+- **Session Persistence**: Balance, positions, trades, last candle saved
+- **Multi-Symbol Isolation**: Each symbol processed independently
+- **Heartbeat Logging**: Periodic status logging (configurable interval)
+- **Graceful Shutdown**: Saves state on SIGINT/SIGTERM
+
+### Configuration
+
+```env
+# Paper-Live settings
+PAPER_SESSION_ID=           # Auto-generated if empty
+PAPER_AUTO_RESUME=true      # Resume existing sessions on restart
+MARKET_MAX_STALE_SECONDS=300  # Max staleness before refusing trades
+MARKET_RETRY_SECONDS=30     # Retry interval on market data failure
+PAPER_HEARTBEAT_SECONDS=300 # Heartbeat logging interval
+```
+
+### Safety Guarantees
+
+- `LIVE_TRADING=false` is always enforced
+- No real order execution path exists
+- No synthetic fallback in paper-live mode (fails loudly)
+- Risk controls remain fully enforced
+- API keys never printed or saved to database
+- Kill switch available via risk manager
 
 ## Testing
 

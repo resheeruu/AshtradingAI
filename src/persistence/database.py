@@ -187,6 +187,27 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_provider_usage_provider ON provider_usage(provider, model);
             CREATE INDEX IF NOT EXISTS idx_provider_usage_experiment ON provider_usage(experiment_id);
             CREATE INDEX IF NOT EXISTS idx_provider_usage_participant ON provider_usage(participant_id);
+
+            CREATE TABLE IF NOT EXISTS paper_sessions (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL DEFAULT 'active',
+                exchange TEXT,
+                symbols TEXT,
+                timeframe TEXT,
+                data_source TEXT,
+                starting_balance REAL,
+                current_balance REAL,
+                last_processed_candle TEXT,
+                open_positions_json TEXT DEFAULT '{}',
+                trade_history_json TEXT DEFAULT '[]',
+                config_json TEXT DEFAULT '{}',
+                software_version TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_paper_sessions_status ON paper_sessions(status);
+            CREATE INDEX IF NOT EXISTS idx_paper_sessions_exchange ON paper_sessions(exchange);
         """)
         conn.commit()
         # Migrate existing tables to add new columns if missing
@@ -538,4 +559,92 @@ class Database:
             params.append(experiment_id)
         query += " GROUP BY provider, model"
         rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def create_paper_session(
+        self,
+        session_id: str,
+        exchange: str,
+        symbols: str,
+        timeframe: str,
+        data_source: str,
+        starting_balance: float,
+        config_json: str = "{}",
+        software_version: str = "",
+    ) -> str:
+        ts = datetime.now(timezone.utc).isoformat()
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO paper_sessions
+               (id, status, exchange, symbols, timeframe, data_source,
+                starting_balance, current_balance, config_json,
+                software_version, created_at, updated_at)
+               VALUES (?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, exchange, symbols, timeframe, data_source,
+             starting_balance, starting_balance, config_json,
+             software_version, ts, ts),
+        )
+        conn.commit()
+        logger.debug("Created paper session %s", session_id)
+        return session_id
+
+    def get_paper_session(self, session_id: str) -> Optional[Dict]:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM paper_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_active_paper_session(self, exchange: str) -> Optional[Dict]:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM paper_sessions WHERE exchange = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+            (exchange,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_paper_session(
+        self,
+        session_id: str,
+        current_balance: Optional[float] = None,
+        last_processed_candle: Optional[str] = None,
+        open_positions_json: Optional[str] = None,
+        trade_history_json: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> None:
+        ts = datetime.now(timezone.utc).isoformat()
+        conn = self._get_conn()
+        updates = ["updated_at = ?"]
+        params: List = [ts]
+        if current_balance is not None:
+            updates.append("current_balance = ?")
+            params.append(current_balance)
+        if last_processed_candle is not None:
+            updates.append("last_processed_candle = ?")
+            params.append(last_processed_candle)
+        if open_positions_json is not None:
+            updates.append("open_positions_json = ?")
+            params.append(open_positions_json)
+        if trade_history_json is not None:
+            updates.append("trade_history_json = ?")
+            params.append(trade_history_json)
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+        params.append(session_id)
+        conn.execute(
+            f"UPDATE paper_sessions SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+
+    def close_paper_session(self, session_id: str) -> None:
+        self.update_paper_session(session_id, status="closed")
+
+    def get_paper_sessions(self, limit: int = 10) -> List[Dict]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM paper_sessions ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
         return [dict(r) for r in rows]
