@@ -1,6 +1,6 @@
 """AI manager for running multiple AIs in parallel with isolated portfolios."""
 import logging
-import math
+import uuid
 from typing import Dict, List, Optional
 
 from src.ai.base import TradingAI, MarketContext
@@ -36,6 +36,7 @@ class AIManager:
         max_daily_loss: float = 0.03,
         max_drawdown: float = 0.15,
         min_confidence: float = 0.60,
+        database=None,
     ):
         self.starting_balance = starting_balance
         self.fee = fee
@@ -48,6 +49,7 @@ class AIManager:
             max_drawdown=max_drawdown,
             min_confidence=min_confidence,
         )
+        self._database = database
 
     def register_ai(self, ai: TradingAI) -> None:
         portfolio = Portfolio(ai_id=ai.ai_id, starting_balance=self.starting_balance)
@@ -60,8 +62,16 @@ class AIManager:
         self,
         data: Dict[str, List[dict]],
         timeframe: str = "1h",
+        experiment_id: Optional[str] = None,
     ) -> List[dict]:
-        """Backtest all registered AIs and return ranked results."""
+        """Backtest all registered AIs and return ranked results.
+
+        Every AI receives identical market data, fees, slippage, starting balance.
+        This ensures fair comparison.
+        """
+        if experiment_id is None:
+            experiment_id = str(uuid.uuid4())[:8]
+
         results = []
         for entry in self.entries:
             bt = BacktestEngine(
@@ -72,6 +82,43 @@ class AIManager:
             metrics, portfolio = bt.run(entry.ai, data, timeframe)
             entry.metrics = metrics
             entry.portfolio = portfolio
+
+            # Persist results if database available
+            if self._database is not None:
+                m = metrics.summary()
+                self._database.log_backtest_run(
+                    ai_id=entry.ai.ai_id,
+                    symbol=",".join(data.keys()) if data else None,
+                    timeframe=timeframe,
+                    starting_balance=m["starting_balance"],
+                    ending_balance=m["ending_balance"],
+                    return_percent=m["return_pct"],
+                    max_drawdown=m["max_drawdown"],
+                    win_rate=m["win_rate"],
+                    profit_factor=m["profit_factor"],
+                    sharpe_ratio=m["sharpe_ratio"],
+                    sortino_ratio=m["sortino_ratio"],
+                    trade_count=m["num_trades"],
+                    experiment_id=experiment_id,
+                    metrics_json=str(m),
+                )
+
+                # Persist individual trades
+                for trade in portfolio.trade_history:
+                    self._database.log_trade(
+                        ai_id=entry.ai.ai_id,
+                        symbol=trade.symbol,
+                        side=trade.side,
+                        entry_price=trade.entry_price,
+                        exit_price=trade.exit_price,
+                        quantity=trade.quantity,
+                        fee=trade.fee,
+                        slippage=trade.slippage,
+                        pnl=trade.pnl,
+                        balance=portfolio.balance,
+                        experiment_id=experiment_id,
+                    )
+
             results.append({
                 "ai_id": entry.ai.ai_id,
                 "model": entry.ai.model,

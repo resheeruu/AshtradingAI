@@ -1,183 +1,160 @@
 # AshtradingAI
 
-AI Multi-Trader System — lightweight backtesting and paper trading platform for comparing multiple AI trading strategies.
+AI Multi-Trader Tournament System — lightweight platform for running fair, auditable competitions between multiple AI trading strategies.
+
+**Live trading is disabled by default. No real orders are ever executed.**
 
 ## What It Is
 
-AshtradingAI allows multiple AI models to independently make trading decisions on the same market data, each with their own isolated portfolio. The system ranks AIs by risk-adjusted performance, not just raw returns.
+AshtradingAI runs multi-AI trading tournaments where each AI independently makes decisions on the same market data, with its own isolated portfolio. The system ranks AIs by risk-adjusted performance using a transparent composite score.
 
-**Live trading is disabled by default and will not execute real orders.**
-
-## Architecture
-
-```
-AshtradingAI/
-├── bot.py                          # CLI entry point
-├── requirements.txt
-├── .env.example
-├── src/
-│   ├── config.py                   # Central configuration
-│   ├── ai/
-│   │   ├── base.py                 # TradingAI abstract interface
-│   │   ├── manager.py              # Multi-AI competition manager
-│   │   ├── test_strategy.py        # Deterministic RSI strategy (no API needed)
-│   │   └── providers/              # Future AI provider integrations
-│   ├── market/
-│   │   ├── data.py                 # Market data via CCXT REST API
-│   │   └── candles.py              # Synthetic candle generation
-│   ├── indicators/
-│   │   └── technical.py            # SMA, EMA, RSI, MACD, ATR, Bollinger
-│   ├── strategy/
-│   │   └── engine.py               # Strategy execution coordinator
-│   ├── risk/
-│   │   └── manager.py              # Risk management layer
-│   ├── portfolio/
-│   │   └── portfolio.py            # Isolated portfolio accounting
-│   ├── trading/
-│   │   ├── engine.py               # Trade execution engine
-│   │   ├── orders.py               # Order type definitions
-│   │   └── paper/
-│   │       └── broker.py           # Virtual paper broker
-│   ├── backtest/
-│   │   └── engine.py               # Deterministic backtesting engine
-│   └── notifications/
-│       └── logger.py               # Logging setup
-├── tests/                          # Unit tests
-└── scripts/
-    └── smoke_test.py               # Quick verification script
-```
-
-## Installation
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/resheeruu/AshtradingAI.git
-cd AshtradingAI
-
-# Install dependencies (minimal — only stdlib + dotenv + requests)
 pip install -r requirements.txt
-
-# Copy and edit configuration
 cp .env.example .env
-```
-
-## Configuration
-
-Edit `.env`:
-
-```env
-APP_ENV=paper
-LIVE_TRADING=false          # MUST remain false
-EXCHANGE=binance
-SYMBOLS=BTC/USDT,ETH/USDT
-TIMEFRAME=1h
-STARTING_BALANCE=1000
-TRADING_FEE=0.001
-SLIPPAGE=0.0005
-MAX_POSITION_SIZE=0.10
-MAX_OPEN_POSITIONS=3
-MAX_DAILY_LOSS=0.03
-MAX_DRAWDOWN=0.15
-MIN_AI_CONFIDENCE=0.60
-AI_PROVIDER=                # Leave empty for test strategy
-AI_API_KEY=
-AI_MODEL=
-```
-
-## Running
-
-```bash
-# Show current configuration
 python bot.py --mode status
-
-# Run backtest with deterministic test strategy
-python bot.py --mode backtest
-
-# Run paper trading demo
-python bot.py --mode paper
-
-# Run AI competition leaderboard
-python bot.py --mode leaderboard
-
-# Run smoke test (no API credentials needed)
 python scripts/smoke_test.py
 ```
 
-## Backtesting
+## CLI Modes
 
-The backtest engine runs a deterministic strategy on synthetic or real historical data. Output includes:
-
-- Starting/ending balance, net profit, return %
-- Number of trades, win rate, profit factor
-- Maximum drawdown, Sharpe ratio, Sortino ratio
-- Fees paid, largest win/loss, long/short counts
-
-Results are reproducible — same inputs always produce the same outputs.
-
-## Paper Trading
-
-The paper broker simulates order execution with:
-- Market orders (buy/sell)
-- Configurable fees and slippage
-- Balance tracking
-- Position management
-- Trade history
-
-No real orders are ever sent to any exchange.
-
-## Adding AI Providers
-
-1. Create a new file in `src/ai/providers/`
-2. Subclass `TradingAI` from `src/ai/base.py`
-3. Implement the `decide(context)` method
-4. Register with `AIManager`
-
-```python
-from src.ai.base import TradingAI, MarketContext
-
-class MyAI(TradingAI):
-    def __init__(self):
-        super().__init__(ai_id="my-ai", model="gpt-4")
-
-    def decide(self, context: MarketContext) -> dict:
-        # Your trading logic here
-        return {"decision": "HOLD", "confidence": 0.5}
+```bash
+python bot.py --mode status              # Show configuration
+python bot.py --mode backtest            # Single-AI backtest
+python bot.py --mode paper               # Paper trading demo
+python bot.py --mode leaderboard         # Multi-AI competition
+python bot.py --mode tournament          # Full tournament with audit trail
+python bot.py --mode tournament-backtest # Tournament backtest with test strategies
+python scripts/smoke_test.py             # 12-test verification
 ```
 
-Set environment variables:
+## Tournament Architecture
+
+### Candle-by-Candle Execution
+
+The tournament engine enforces strict fair execution:
+
+1. Load shared read-only market data once
+2. For each candle timestamp:
+   - Compute indicators from historical data only (no lookahead)
+   - Build identical market context for each AI
+   - Collect all AI decisions (order-independent)
+   - Apply identical risk rules to each
+   - Execute paper orders independently
+   - Record all decisions and trades
+3. Close remaining positions at final price
+4. Compute metrics and rank by composite score
+5. Persist everything to SQLite
+
+### AI Isolation
+
+Each AI has completely independent:
+- Portfolio (balance, positions, trades)
+- Paper broker
+- Risk manager state
+- Decision history
+
+No AI can see another AI's balance, trades, PnL, or decisions.
+
+### No-Lookahead Rule
+
+At candle N, an AI receives ONLY:
+- Candle N and all historical candles ≤ N
+- Indicators computed from historical data only
+- Its own portfolio state
+
+An AI NEVER receives:
+- Future candles (N+1, N+2, ...)
+- Future prices or volumes
+- Other AI's decisions or portfolio states
+
+### Provider Configuration
+
+Set `AI_PARTICIPANTS` to comma-separated provider names:
+
+```env
+AI_PARTICIPANTS=deepseek,gemini,openai,test
 ```
-AI_PROVIDER=openai
-AI_API_KEY=sk-...
-AI_MODEL=gpt-4
+
+Available providers: `openai`, `deepseek`, `gemini`, `openrouter`, `groq`, `anthropic`, `test`
+
+Each provider reads its own API key from environment:
+
+```env
+OPENAI_API_KEY=sk-...
+DEEPSEEK_API_KEY=sk-...
+GEMINI_API_KEY=...
 ```
 
-## AI Competition
+Unconfigured providers are automatically skipped (not crashed).
 
-Register multiple AIs and compare them:
+If no providers are configured, the `test` strategy (deterministic RSI) is used.
 
-```python
-from src.ai.manager import AIManager
+### AI Decision Format
 
-manager = AIManager(starting_balance=1000.0)
-manager.register_ai(AI_A())
-manager.register_ai(AI_B())
-manager.register_ai(AI_C())
+All providers must output:
 
-results = manager.run_competition(market_data)
-print(manager.get_leaderboard())
+```json
+{
+  "decision": "BUY" | "SELL" | "HOLD",
+  "confidence": 0.0 to 1.0,
+  "reason": "explanation",
+  "suggested_position_size": 0.0 to 0.25,
+  "stop_loss": price or null,
+  "take_profit": price or null
+}
 ```
 
-Ranking uses a composite score weighting:
-- Return (25%)
-- Sharpe ratio (20%)
-- Sortino ratio (20%)
-- Win rate (10%)
-- Drawdown protection (15%)
-- Profit factor (10%)
+Invalid/malformed responses → HOLD. Provider timeout → HOLD. Provider error → HOLD. The tournament never crashes due to AI failures.
 
-This ensures the **best risk-adjusted trader** wins, not just the highest profit.
+### AI Reasoning Log
 
-## Metrics
+Every decision is recorded with:
+- experiment_id, timestamp, candle_index
+- ai_id, symbol, price
+- decision, confidence, reason
+- suggested_position_size, stop_loss, take_profit
+- action_taken: EXECUTED, REJECTED_BY_RISK, HOLD, or AI_ERROR
+- balance_before, balance_after
+
+This makes every experiment fully auditable.
+
+## Fair Execution
+
+All participants receive:
+- Same candles at same timestamps
+- Same fees and slippage
+- Same starting balance
+- Same risk limits
+- Same execution rules
+
+Decisions are collected for ALL AIs before any are executed. This prevents ordering bias.
+
+## Composite Score
+
+Transparent, documented formula:
+
+```
+Score = return_pct × 0.25
+      + sharpe_ratio × 0.20
+      + sortino_ratio × 0.20
+      + win_rate × 0.10
+      + (1 - max_drawdown) × 0.15
+      + min(profit_factor, 5) / 5 × 0.10
+```
+
+Higher score = better risk-adjusted performance. Drawdown is penalized.
+
+## Leaderboard Awards
+
+- HIGHEST RETURN — best raw return
+- LOWEST DRAWDOWN — smallest peak-to-trough decline
+- BEST SHARPE — highest Sharpe ratio
+- HIGHEST WIN RATE — most winning trades
+- BEST RISK-ADJUSTED — highest composite score
+
+## Performance Metrics
 
 | Metric | Description |
 |--------|-------------|
@@ -187,38 +164,259 @@ This ensures the **best risk-adjusted trader** wins, not just the highest profit
 | Max Drawdown | Worst peak-to-trough decline |
 | Sharpe Ratio | Risk-adjusted return (annualised) |
 | Sortino Ratio | Downside risk-adjusted return |
+| Longest Losing Streak | Consecutive losing trades |
+| Fees Paid | Total fees consumed |
+| Total Slippage | Total slippage cost |
+
+## Experiment Reproducibility
+
+Every tournament stores:
+- experiment_id, exchange, symbols, timeframe
+- Starting/ending timestamps
+- Starting balance, fees, slippage
+- Risk configuration
+- AI model identifiers
+- Software version
+
+Same configuration + deterministic strategies = same results.
+
+AI API responses may differ between runs (network, temperature, model updates). This is clearly documented in results.
+
+## Backtesting
+
+The backtest engine runs deterministic strategies on historical data. Output includes all metrics above. Results are fully reproducible with same inputs.
+
+## Paper Trading
+
+The paper broker simulates:
+- Market orders (buy/sell)
+- Configurable fees and slippage
+- Balance tracking
+- Position management
+- Trade history
+
+No real orders are ever sent to any exchange.
+
+## SQLite Persistence
+
+All results stored in `data/ashtrading.db`:
+- `trades` — individual trade records
+- `ai_decisions` — full decision audit trail
+- `backtest_runs` — aggregated metrics per AI
+- `tournaments` — experiment metadata
+- `provider_health` — provider state tracking (cooldown, failures, successes)
+- `provider_usage` — API usage logs (tokens, latency, success/failure)
+
+Query past experiments for analysis.
+
+## AI Resilience System
+
+The system provides 24/7 provider resilience with automatic recovery:
+
+### Provider State Machine
+
+```
+ONLINE ──> COOLDOWN ──> ONLINE (after cooldown, transient errors)
+ONLINE ──> QUOTA_EXHAUSTED ──> ONLINE (after daily reset or manual override)
+ONLINE ──> AUTH_FAILED (requires config change, no auto-recovery)
+ONLINE ──> MODEL_UNAVAILABLE (requires config change, no auto-recovery)
+ONLINE ──> DISABLED (admin override)
+```
+
+### Error Classification
+
+- **429 Rate Limit** → Transient, triggers backoff/cooldown
+- **429 Daily Quota** → Marks provider QUOTA_EXHAUSTED until next day
+- **401 Unauthorized** → Permanent, marks AUTH_FAILED
+- **403 Forbidden** → Permanent, requires config change
+- **404 Not Found** → Permanent, marks MODEL_UNAVAILABLE
+- **5xx Server Error** → Transient, triggers backoff
+- **Timeout** → Transient, triggers backoff
+- **Malformed Response** → Logged, HOLD decision returned
+
+### Exponential Backoff with Jitter
+
+- Base delay: 60s (configurable)
+- Max delay: 3600s (1 hour)
+- Multiplier: 2x
+- Jitter: 50-100% randomization
+- Consecutive failures before cooldown: 3
+
+### Quota Management
+
+Daily token and request limits per provider/model:
+- Auto-resets at midnight UTC
+- Prevents accidental overuse
+- Tracks usage in database
+
+### Global Rate Governor
+
+Local safety limits (not provider-claimed quotas):
+- Requests per minute (global, per-provider, per-model)
+- Tokens per minute (global, per-provider, per-model)
+- Sliding window tracking
+
+### AI Response Cache
+
+- LRU in-memory cache (default: 1000 entries)
+- TTL-based expiry (default: 1 hour)
+- Keyed by provider+model+symbol+timeframe+candle_timestamp+prompt_hash
+- Preserves no-lookahead guarantee
+- Avoids redundant API calls for identical prompts
+
+### Multi-Provider Failover
+
+Configurable fallback chain (disabled by default in tournament for fairness):
+
+```env
+AI_FAILOVER_ENABLED=true
+AI_FALLBACK_PROVIDER=deepseek
+AI_FALLBACK_MODEL=deepseek-chat
+AI_FALLBACK_API_KEY=sk-...
+AI_FALLBACK_BASE_URL=https://api.deepseek.com/v1
+```
+
+When enabled:
+1. Primary provider fails
+2. System checks fallback provider availability
+3. Retries with fallback provider
+4. If all fail, returns HOLD decision
+
+**Tournament fairness**: Failover is disabled by default in tournament mode to ensure all participants use the same provider. Enable for paper-trading resilience.
+
+### 24/7 Resilience
+
+- Providers automatically recover from transient errors
+- Cooldown periods prevent hammering failing providers
+- Daily quotas reset at midnight UTC
+- Health state persisted to database
+- Manual override available via CLI
+
+### Configuration
+
+```env
+# Failover
+AI_FAILOVER_ENABLED=false
+AI_FALLBACK_PROVIDER=
+AI_FALLBACK_MODEL=
+AI_FALLBACK_API_KEY=
+AI_FALLBACK_BASE_URL=
+
+# Cache
+AI_CACHE_ENABLED=true
+AI_CACHE_MAX_SIZE=1000
+AI_CACHE_TTL_SECONDS=3600
+
+# Cooldown & Backoff
+AI_COOLDOWN_SECONDS=60
+AI_MAX_FAILURES_BEFORE_COOLDOWN=3
+AI_MAX_COOLDOWN_SECONDS=3600
+
+# Daily Quotas (0 = unlimited)
+AI_DAILY_TOKEN_LIMIT=0
+AI_DAILY_REQUEST_LIMIT=0
+
+# Rate Limiting (0 = unlimited)
+AI_GLOBAL_MAX_RPM=0
+AI_GLOBAL_MAX_TPM=0
+AI_PER_PROVIDER_MAX_RPM=0
+AI_PER_PROVIDER_MAX_TPM=0
+```
+
+### Provider Health Status
+
+View provider health with:
+
+```bash
+python bot.py --mode status
+```
+
+Shows:
+- Provider state (ONLINE, COOLDOWN, QUOTA_EXHAUSTED, AUTH_FAILED, etc.)
+- Failure/success counts
+- Last error message
+- Daily token/request usage
+- Cache hit rates
 
 ## Dependencies
 
 - `python-dotenv` — environment variable loading
 - `requests` — HTTP client (for optional live market data)
-- Python 3.10+ standard library
+- Python 3.10+ standard library (including sqlite3)
 
-No numpy, pandas, or heavy ML frameworks required.
+No numpy, pandas, or heavy ML frameworks. Bounded memory usage.
+
+## Configuration Reference
+
+```env
+APP_ENV=paper
+LIVE_TRADING=false           # MUST remain false
+EXCHANGE=binance
+SYMBOLS=BTC/USDT,ETH/USDT
+TIMEFRAME=1h
+CANDLE_LIMIT=500
+STARTING_BALANCE=1000
+TRADING_FEE=0.001
+SLIPPAGE=0.0005
+MAX_POSITION_SIZE=0.10
+MAX_OPEN_POSITIONS=3
+MAX_DAILY_LOSS=0.03
+MAX_DRAWDOWN=0.15
+MIN_AI_CONFIDENCE=0.60
+DATA_SOURCE=synthetic        # "synthetic" or "live"
+
+# Tournament participants
+AI_PARTICIPANTS=test
+
+# Provider API keys
+OPENAI_API_KEY=
+DEEPSEEK_API_KEY=
+GEMINI_API_KEY=
+OPENROUTER_API_KEY=
+GROQ_API_KEY=
+ANTHROPIC_API_KEY=
+```
 
 ## Security
 
 - `.env` is gitignored — never commit secrets
-- API keys are never logged
-- Live trading is disabled by default
+- API keys are never logged or printed
+- Live trading is disabled (`LIVE_TRADING=false`)
 - Risk manager enforces limits on every AI independently
 - Kill switch halts all trading immediately
+- No code path sends real exchange orders
 
-## Why Live Trading Is Disabled
+## API Cost Considerations
 
-This is a research and paper-trading platform. Live trading requires:
-- Explicit `LIVE_TRADING=true` configuration
-- Exchange API credentials
-- Additional safety checks and hard risk limits
+- Configurable decision interval
+- Configurable max API calls
+- Configurable timeout per request
+- Exponential backoff on rate limits
+- Test strategy requires zero API calls
+- Bounded retry attempts
+- AI response cache avoids redundant API calls
+- Daily token/request quotas prevent accidental overuse
+- Global rate governor enforces local safety limits
+- Provider health tracking prevents hammering failing providers
 
-Real-money trading will only be added after extensive backtesting validation.
+## Limitations
 
-## Tests
+- Synthetic data is random walk — not representative of real markets
+- Live market data depends on CCXT REST API availability
+- AI API responses introduce non-determinism between runs
+- Single-threaded execution (sufficient for current scale)
+- SQLite is single-writer (adequate for tournament use)
+
+## Testing
 
 ```bash
-# Run all unit tests
+# 163 unit tests (107 original + 56 resilience)
 python -m pytest tests/ -v
 
-# Run smoke test
+# 12-test smoke test
 python scripts/smoke_test.py
 ```
+
+## Important Disclaimer
+
+**Past performance does not guarantee future results.** Trading involves significant risk of loss. This system is for research and educational purposes only. Do not use it to make real financial decisions without thorough independent validation.
