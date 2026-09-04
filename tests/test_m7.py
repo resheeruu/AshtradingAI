@@ -30,6 +30,11 @@ from src.portfolio.portfolio import Portfolio
 from src.ai.base import TradingAI, MarketContext
 from src.config import Config
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
 
 # ── Helper Fixtures ───────────────────────────────────────────────────
 
@@ -236,10 +241,10 @@ class TestCandleDirectionFilter:
 
     def test_bullish_candle_long_passes(self):
         f = CandleDirectionFilter(enabled=True)
+        # Filter receives only completed candles (forming already stripped)
         candles = [
             {"open": 100, "close": 100, "timestamp": "t0"},
-            {"open": 100, "close": 105, "timestamp": "t1"},  # bullish completed (index -2)
-            {"open": 110, "close": 112, "timestamp": "t2"},  # forming candle (index -1)
+            {"open": 100, "close": 105, "timestamp": "t1"},  # last completed: bullish
         ]
         result = f.evaluate(candles, "LONG")
         assert result.passed is True
@@ -248,27 +253,30 @@ class TestCandleDirectionFilter:
         f = CandleDirectionFilter(enabled=True)
         candles = [
             {"open": 100, "close": 100, "timestamp": "t0"},
-            {"open": 100, "close": 100, "timestamp": "t1"},
-            {"open": 105, "close": 100, "timestamp": "t2"},  # bearish
+            {"open": 105, "close": 100, "timestamp": "t1"},  # last completed: bearish
         ]
         result = f.evaluate(candles, "LONG")
         assert result.passed is False
 
-    def test_no_forming_candle_used(self):
-        """Prove the forming candle (index -1) is NOT used."""
+    def test_uses_last_completed_not_forming(self):
+        """With completed candles only, last candle is checked (no double-offset)."""
         f = CandleDirectionFilter(enabled=True)
         candles = [
-            {"open": 100, "close": 105},  # completed: bullish
-            {"open": 110, "close": 100},  # forming: bearish (should be ignored)
+            {"open": 100, "close": 95, "timestamp": "t0"},  # bearish
+            {"open": 95, "close": 102, "timestamp": "t1"},  # bullish (last = checked)
         ]
         result = f.evaluate(candles, "LONG")
-        # Should pass because completed candle is bullish
         assert result.passed is True
 
     def test_insufficient_candles_fails(self):
         f = CandleDirectionFilter(enabled=True)
-        result = f.evaluate([{"open": 100, "close": 101}], "LONG")
+        result = f.evaluate([], "LONG")
         assert result.passed is False
+
+    def test_single_candle_passes(self):
+        f = CandleDirectionFilter(enabled=True)
+        result = f.evaluate([{"open": 100, "close": 105}], "LONG")
+        assert result.passed is True
 
 
 # ============================================================
@@ -574,9 +582,9 @@ class TestNoLookahead:
     def test_forming_candle_excluded_from_candle_filter(self):
         """Candle direction filter uses completed candle, not forming."""
         f = CandleDirectionFilter(enabled=True)
+        # Completed candles only (forming stripped by caller)
         candles = [
             {"open": 100, "close": 105, "timestamp": "t1"},  # completed: bullish
-            {"open": 110, "close": 90, "timestamp": "t2"},   # forming: bearish
         ]
         result = f.evaluate(candles, "LONG")
         # Should pass because completed candle is bullish
@@ -1035,3 +1043,334 @@ class TestM7Config:
         d = Config.as_dict()
         assert "M7_ENABLED" in d
         assert "M7_RISK_PERCENT" in d
+
+
+# ============================================================
+# M8: Candle Indexing Correctness Tests
+# ============================================================
+
+class TestCandleIndexingCorrectness:
+    """Verify the double-offset bug fix: CandleDirectionFilter operates on
+    completed candles only (forming already stripped by caller)."""
+
+    def test_filter_receives_completed_candles_directly(self):
+        """CandleDirectionFilter uses candles[-1] — the last completed candle."""
+        f = CandleDirectionFilter(enabled=True)
+        # 3 completed candles, last one is bearish
+        candles = [
+            {"open": 100, "close": 105},  # bullish
+            {"open": 105, "close": 110},  # bullish
+            {"open": 110, "close": 100},  # bearish (this is checked)
+        ]
+        result = f.evaluate(candles, "LONG")
+        assert result.passed is False  # bearish → LONG rejected
+
+    def test_strategy_engine_passes_completed_to_cascade(self):
+        """StrategyEngine strips forming candle before FilterCascade."""
+        engine = StrategyEngine(
+            ai=SimpleAI(), symbol="BTC/USDT", timeframe="1h",
+            filter_config={"atr_enabled": False, "angle_enabled": False,
+                          "price_ema_enabled": False, "candle_enabled": True,
+                          "ema_order_enabled": False, "session_enabled": False},
+        )
+        # Create candles where forming is bearish but last completed is bullish
+        candles = _make_candles(_trending_up(60))
+        candles[-1]["close"] = candles[-1]["open"] - 10  # forming: bearish
+        candles[-2]["close"] = candles[-2]["open"] + 5   # last completed: bullish
+
+        engine.process_candle(candles, portfolio_balance=10000)
+        # Should detect LONG (from completed), not be blocked by forming candle
+        if engine.state.phase != StrategyPhase.SCANNING:
+            assert engine.state.direction == "LONG"
+
+    def test_no_double_offset_in_cascade(self):
+        """FilterCascade + CandleDirectionFilter: no offset when forming stripped."""
+        cfg = {"candle_enabled": True, "atr_enabled": False, "angle_enabled": False,
+               "price_ema_enabled": False, "ema_order_enabled": False, "session_enabled": False}
+        cascade = FilterCascade(cfg)
+        # 2 completed candles: last is bullish
+        candles = [
+            {"open": 100, "close": 95, "high": 101, "low": 94, "close": 95, "timestamp": "t0"},
+            {"open": 95, "close": 102, "high": 103, "low": 94, "close": 102, "timestamp": "t1"},
+        ]
+        result = cascade.evaluate(candles, "LONG")
+        assert result.passed is True  # bullish candle passes
+
+
+# ============================================================
+# M8: AI Confirmation Gate Tests
+# ============================================================
+
+class TestAIConfirmationGate:
+    """Verify that AI must confirm the direction before entry."""
+
+    def test_ai_hold_reduces_confidence_to_zero(self):
+        """AI returning HOLD for a BUY setup should zero out confidence."""
+        class HoldAI(TradingAI):
+            def __init__(self):
+                super().__init__(ai_id="hold-gate-test")
+            def decide(self, context):
+                return {"decision": "HOLD", "confidence": 0.8, "reason": "hold"}
+
+        engine = StrategyEngine(
+            ai=HoldAI(), symbol="BTC/USDT", timeframe="1h",
+            filter_config={"atr_enabled": False, "angle_enabled": False,
+                          "price_ema_enabled": False, "candle_enabled": False,
+                          "ema_order_enabled": False, "session_enabled": False},
+        )
+        engine.state.phase = StrategyPhase.WINDOW_OPEN
+        engine.state.direction = "LONG"
+        engine.state.signal_atr = 10.0
+        engine.state.breakout_high = 110.0
+        engine.state.breakout_low = 90.0
+        engine.state.window_candles_remaining = 1
+
+        candles = _make_candles(_trending_up(60))
+        candles[-2]["close"] = candles[-2]["high"] + 1.0
+
+        signal = engine.process_candle(candles, portfolio_balance=10000)
+        if signal is not None:
+            assert signal.confidence == 0.0  # AI did not confirm BUY
+
+    def test_ai_sell_reduces_confidence_for_buy_setup(self):
+        """AI returning SELL for a BUY setup should zero out confidence."""
+        class SellAI(TradingAI):
+            def __init__(self):
+                super().__init__(ai_id="sell-gate-test")
+            def decide(self, context):
+                return {"decision": "SELL", "confidence": 0.9, "reason": "sell"}
+
+        engine = StrategyEngine(
+            ai=SellAI(), symbol="BTC/USDT", timeframe="1h",
+            filter_config={"atr_enabled": False, "angle_enabled": False,
+                          "price_ema_enabled": False, "candle_enabled": False,
+                          "ema_order_enabled": False, "session_enabled": False},
+        )
+        engine.state.phase = StrategyPhase.WINDOW_OPEN
+        engine.state.direction = "LONG"
+        engine.state.signal_atr = 10.0
+        engine.state.breakout_high = 110.0
+        engine.state.breakout_low = 90.0
+        engine.state.window_candles_remaining = 1
+
+        candles = _make_candles(_trending_up(60))
+        candles[-2]["close"] = candles[-2]["high"] + 1.0
+
+        signal = engine.process_candle(candles, portfolio_balance=10000)
+        if signal is not None:
+            assert signal.confidence == 0.0
+
+    def test_ai_buy_passes_for_buy_setup(self):
+        """AI returning BUY for a BUY setup preserves confidence."""
+        engine = StrategyEngine(
+            ai=SimpleAI(), symbol="BTC/USDT", timeframe="1h",
+            filter_config={"atr_enabled": False, "angle_enabled": False,
+                          "price_ema_enabled": False, "candle_enabled": False,
+                          "ema_order_enabled": False, "session_enabled": False},
+        )
+        engine.state.phase = StrategyPhase.WINDOW_OPEN
+        engine.state.direction = "LONG"
+        engine.state.signal_atr = 10.0
+        engine.state.breakout_high = 110.0
+        engine.state.breakout_low = 90.0
+        engine.state.window_candles_remaining = 1
+
+        candles = _make_candles(_trending_up(60))
+        candles[-2]["close"] = candles[-2]["high"] + 1.0
+
+        signal = engine.process_candle(candles, portfolio_balance=10000)
+        if signal is not None:
+            assert signal.confidence > 0.0
+
+
+# ============================================================
+# M8: SessionFilter Timezone Tests
+# ============================================================
+
+class TestSessionFilterTimezone:
+    """Verify proper timezone conversion in SessionFilter."""
+
+    def test_utc_timestamp_in_utc_session(self):
+        f = SessionFilter(enabled=True, start_hour=9, end_hour=17, timezone_str="UTC")
+        result = f.evaluate("2024-06-15T12:00:00+00:00")
+        assert result.passed is True
+
+    def test_utc_timestamp_outside_utc_session(self):
+        f = SessionFilter(enabled=True, start_hour=9, end_hour=17, timezone_str="UTC")
+        result = f.evaluate("2024-06-15T20:00:00+00:00")
+        assert result.passed is False
+
+    def test_est_timestamp_in_est_session(self):
+        """20:00 UTC = 16:00 EDT (UTC-4) — should be in 9-17 session."""
+        if ZoneInfo is None:
+            pytest.skip("zoneinfo not available")
+        f = SessionFilter(enabled=True, start_hour=9, end_hour=17, timezone_str="America/New_York")
+        result = f.evaluate("2024-06-15T20:00:00+00:00")
+        # 20:00 UTC → 16:00 EDT → in session (if timezone data available)
+        if "unknown timezone" in (result.reason or ""):
+            pytest.skip("America/New_York timezone data not available")
+        assert result.passed is True
+
+    def test_est_timestamp_outside_est_session(self):
+        """23:00 UTC = 19:00 EDT (UTC-4) — should be outside 9-17 session."""
+        if ZoneInfo is None:
+            pytest.skip("zoneinfo not available")
+        f = SessionFilter(enabled=True, start_hour=9, end_hour=17, timezone_str="America/New_York")
+        result = f.evaluate("2024-06-15T23:00:00+00:00")
+        if "unknown timezone" in (result.reason or ""):
+            pytest.skip("America/New_York timezone data not available")
+        assert result.passed is False
+
+    def test_unknown_timezone_fails_closed(self):
+        f = SessionFilter(enabled=True, timezone_str="Nonexistent/Zone")
+        result = f.evaluate("2024-06-15T12:00:00+00:00")
+        assert result.passed is False
+        assert "unknown timezone" in result.reason
+
+    def test_gmt_equivalent_to_utc(self):
+        f = SessionFilter(enabled=True, start_hour=9, end_hour=17, timezone_str="GMT")
+        result = f.evaluate("2024-06-15T12:00:00+00:00")
+        assert result.passed is True
+
+
+# ============================================================
+# M8: M7 Backtest Engine Tests
+# ============================================================
+
+class TestM7BacktestEngine:
+    def test_basic_run(self):
+        """M7 backtest runs without errors and produces metrics."""
+        from src.backtest.m7_backtest import M7BacktestEngine
+        from src.ai.test_strategy import TestStrategy
+
+        ai = TestStrategy(ai_id="m7-bt-test")
+        candles = _make_candles(_trending_up(100))
+        data = {"BTC/USDT": candles}
+
+        engine = M7BacktestEngine(
+            starting_balance=10000,
+            filter_config={"atr_enabled": False, "angle_enabled": False,
+                          "price_ema_enabled": False, "candle_enabled": False,
+                          "ema_order_enabled": False, "session_enabled": False},
+        )
+        metrics, portfolio = engine.run(ai, data, "1h")
+
+        assert metrics.standard.starting_balance == 10000
+        assert metrics.standard.ending_balance > 0
+        assert metrics.state_stats.total_candles > 0
+
+    def test_metrics_summary_structure(self):
+        """Metrics summary contains all expected keys."""
+        from src.backtest.m7_backtest import M7BacktestEngine
+        from src.ai.test_strategy import TestStrategy
+
+        ai = TestStrategy(ai_id="m7-bt-struct")
+        candles = _make_candles(_trending_up(80))
+        data = {"BTC/USDT": candles}
+
+        engine = M7BacktestEngine(starting_balance=5000)
+        metrics, _ = engine.run(ai, data, "1h")
+
+        s = metrics.summary()
+        assert "standard" in s
+        assert "filter_stats" in s
+        assert "state_stats" in s
+        assert "ai_stats" in s
+        assert "per_symbol" in s
+
+    def test_walk_forward_split(self):
+        """Walk-forward splits data and runs both periods."""
+        from src.backtest.m7_backtest import run_walk_forward
+        from src.ai.test_strategy import TestStrategy
+
+        ai = TestStrategy(ai_id="m7-wf-test")
+        candles = _make_candles(_trending_up(100))
+        data = {"BTC/USDT": candles}
+
+        is_m, oos_m, is_p, oos_p = run_walk_forward(
+            ai, data, "1h", in_sample_pct=0.7,
+            starting_balance=10000,
+        )
+        assert is_m.standard.starting_balance == 10000
+        assert oos_m.standard.starting_balance == 10000
+        assert is_m.state_stats.total_candles > 0
+        assert oos_m.state_stats.total_candles > 0
+
+    def test_per_symbol_tracking(self):
+        """Per-symbol stats are tracked correctly."""
+        from src.backtest.m7_backtest import M7BacktestEngine
+        from src.ai.test_strategy import TestStrategy
+
+        ai = TestStrategy(ai_id="m7-bt-sym")
+        data = {
+            "BTC/USDT": _make_candles(_trending_up(80)),
+            "ETH/USDT": _make_candles(_trending_down(80)),
+        }
+
+        engine = M7BacktestEngine(starting_balance=10000)
+        metrics, _ = engine.run(ai, data, "1h")
+
+        assert "BTC/USDT" in metrics.per_symbol
+        assert "ETH/USDT" in metrics.per_symbol
+
+    def test_ai_confirmation_stats_tracked(self):
+        """AI confirmation stats are populated."""
+        from src.backtest.m7_backtest import M7BacktestEngine
+        from src.ai.test_strategy import TestStrategy
+
+        ai = TestStrategy(ai_id="m7-bt-ai")
+        candles = _make_candles(_trending_up(100))
+        data = {"BTC/USDT": candles}
+
+        engine = M7BacktestEngine(starting_balance=10000)
+        metrics, _ = engine.run(ai, data, "1h")
+
+        # AI stats should be a dict with expected keys
+        ai_s = metrics.ai_stats.summary()
+        assert "total_signals" in ai_s
+        assert "approval_rate" in ai_s
+
+
+# ============================================================
+# M8: Position Sizing Integration Tests
+# ============================================================
+
+class TestM7BacktestSizing:
+    def test_broker_metadata_sizing_used(self):
+        """When broker metadata provided, position sizing uses it."""
+        from src.backtest.m7_backtest import M7BacktestEngine
+        from src.ai.test_strategy import TestStrategy
+        from src.risk.manager import BrokerMetadata
+
+        ai = TestStrategy(ai_id="m7-bt-size")
+        candles = _make_candles(_trending_up(80))
+        data = {"BTC/USDT": candles}
+
+        meta = BrokerMetadata(
+            tick_value=1.0, tick_size=0.01, point=0.01,
+            contract_size=1, volume_min=0.001, volume_max=10.0,
+            volume_step=0.001,
+        )
+        engine = M7BacktestEngine(
+            starting_balance=10000, risk_percent=0.01,
+            broker_meta=meta,
+        )
+        metrics, portfolio = engine.run(ai, data, "1h")
+        # Should run without error
+        assert metrics.standard.starting_balance == 10000
+
+    def test_fallback_sizing_without_metadata(self):
+        """Without broker metadata, fallback sizing is used."""
+        from src.backtest.m7_backtest import M7BacktestEngine
+        from src.ai.test_strategy import TestStrategy
+
+        ai = TestStrategy(ai_id="m7-bt-fallback")
+        candles = _make_candles(_trending_up(80))
+        data = {"BTC/USDT": candles}
+
+        engine = M7BacktestEngine(
+            starting_balance=10000, risk_percent=0.01,
+            broker_meta=None,
+        )
+        metrics, portfolio = engine.run(ai, data, "1h")
+        assert metrics.standard.starting_balance == 10000

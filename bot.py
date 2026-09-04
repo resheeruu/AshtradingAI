@@ -1249,12 +1249,172 @@ def cmd_m7(args):
         print("\n  Config: OK")
 
 
+def cmd_m7_backtest(args):
+    """Run M7 strategy backtest with full pipeline validation.
+
+    Tests M7 filters + state machine on historical data.
+    Reports: standard metrics, filter stats, state transitions, AI confirmation rates.
+    """
+    from src.backtest.m7_backtest import M7BacktestEngine, run_walk_forward
+    from src.strategy.filters import build_filter_config_from_settings
+    from src.risk.manager import BrokerMetadata
+    from src.market.candles import generate_synthetic_candles
+
+    print("=" * 50)
+    print("  ASHTRADINGAI M7 STRATEGY BACKTEST")
+    print("=" * 50)
+
+    if not Config.M7_ENABLED:
+        print("\n  WARNING: M7_ENABLED=false. Running backtest with M7 settings anyway.")
+
+    # Build filter config
+    filter_cfg = build_filter_config_from_settings(Config.as_dict())
+
+    # Generate or load data
+    print("\n--- Preparing data ---")
+    if Config.DATA_SOURCE == "live":
+        data = _fetch_live_data(Config.EXCHANGE, Config.SYMBOLS, Config.TIMEFRAME, Config.CANDLE_LIMIT)
+    else:
+        data = {sym: generate_synthetic_candles(symbol=sym, periods=Config.CANDLE_LIMIT) for sym in Config.SYMBOLS}
+
+    for sym, candles in data.items():
+        print(f"  {sym}: {len(candles)} candles")
+
+    # Default broker metadata (generic crypto)
+    broker_meta = BrokerMetadata(
+        tick_value=1.0, tick_size=0.01, point=0.01,
+        contract_size=1, volume_min=0.001, volume_max=10.0,
+        volume_step=0.001,
+    )
+
+    # Create AI
+    from src.ai.test_strategy import TestStrategy
+    ai = TestStrategy(ai_id="m7-backtest")
+
+    # Run backtest
+    print("\n--- Running M7 backtest ---")
+    engine = M7BacktestEngine(
+        starting_balance=Config.STARTING_BALANCE,
+        fee=0.001,
+        slippage=0.0005,
+        max_position_size=Config.MAX_POSITION_SIZE,
+        max_open_positions=Config.MAX_OPEN_POSITIONS,
+        max_daily_loss=Config.MAX_DAILY_LOSS,
+        max_drawdown=Config.MAX_DRAWDOWN,
+        min_confidence=Config.MIN_AI_CONFIDENCE,
+        risk_percent=Config.M7_RISK_PERCENT,
+        filter_config=filter_cfg,
+        pullback_candles=Config.M7_PULLBACK_CANDLES,
+        breakout_window=Config.M7_BREAKOUT_WINDOW,
+        sl_atr_multiplier=Config.M7_SL_ATR_MULTIPLIER,
+        tp_atr_multiplier=Config.M7_TP_ATR_MULTIPLIER,
+        broker_meta=broker_meta,
+    )
+
+    metrics, portfolio = engine.run(ai, data, Config.TIMEFRAME)
+    m = metrics.standard
+
+    # Display results
+    print(f"\n{'='*50}")
+    print(f"  M7 BACKTEST RESULTS")
+    print(f"{'='*50}")
+
+    print(f"\n  --- Standard Metrics ---")
+    print(f"  Starting Balance:  ${m.starting_balance:,.2f}")
+    print(f"  Ending Balance:    ${m.ending_balance:,.2f}")
+    print(f"  Net Profit:        ${m.net_profit:,.2f}")
+    print(f"  Return:            {m.return_pct:.2%}")
+    print(f"  Max Drawdown:      {m.max_drawdown:.2%}")
+    print(f"  Sharpe Ratio:      {m.sharpe_ratio:.2f}")
+    print(f"  Sortino Ratio:     {m.sortino_ratio:.2f}")
+
+    print(f"\n  --- Trade Summary ---")
+    print(f"  Total Trades:      {m.num_trades}")
+    print(f"  Winning:           {m.winning_trades}")
+    print(f"  Losing:            {m.losing_trades}")
+    print(f"  Win Rate:          {m.win_rate:.2%}")
+    print(f"  Profit Factor:     {m.profit_factor:.2f}")
+    print(f"  Avg Win:           ${m.avg_win:,.2f}")
+    print(f"  Avg Loss:          ${m.avg_loss:,.2f}")
+    print(f"  Fees Paid:         ${m.fees_paid:,.2f}")
+
+    print(f"\n  --- M7 Filter Stats ---")
+    fs = metrics.filter_stats.summary()
+    print(f"  Total Evaluations: {fs['total_evaluations']}")
+    for name, count in fs.get("pass_counts", {}).items():
+        fail = fs.get("fail_counts", {}).get(name, 0)
+        total = count + fail
+        rate = count / total if total > 0 else 0
+        print(f"  {name:12s}: {count:4d} pass / {fail:4d} fail ({rate:.0%})")
+
+    print(f"\n  --- State Transitions ---")
+    ss = metrics.state_stats.summary()
+    print(f"  Candles Processed: {ss['total_candles']}")
+    print(f"  Setups Detected:   {ss['setups_detected']}")
+    print(f"  Entries Triggered: {ss['entries_triggered']}")
+    for trans, count in ss.get("transitions", {}).items():
+        print(f"    {trans}: {count}")
+
+    print(f"\n  --- AI Confirmation ---")
+    ai_s = metrics.ai_stats.summary()
+    print(f"  Total Signals:     {ai_s['total_signals']}")
+    print(f"  AI Approved:       {ai_s['ai_approved']}")
+    print(f"  AI Rejected:       {ai_s['ai_rejected']}")
+    print(f"  Approval Rate:     {ai_s['approval_rate']:.2%}")
+    print(f"  Avg Confidence:    {ai_s['avg_confidence']:.2f}")
+
+    if metrics.per_symbol:
+        print(f"\n  --- Per Symbol ---")
+        for sym, ps in metrics.per_symbol.items():
+            print(f"  {sym}: {ps['trades']} trades, PnL=${ps['net_pnl']:,.2f}")
+
+    # Walk-forward validation
+    print(f"\n--- Walk-Forward Validation (70/30 split) ---")
+    is_m, oos_m, _, _ = run_walk_forward(
+        ai, data, Config.TIMEFRAME,
+        in_sample_pct=0.7,
+        starting_balance=Config.STARTING_BALANCE,
+        fee=0.001, slippage=0.0005,
+        max_position_size=Config.MAX_POSITION_SIZE,
+        max_open_positions=Config.MAX_OPEN_POSITIONS,
+        max_daily_loss=Config.MAX_DAILY_LOSS,
+        max_drawdown=Config.MAX_DRAWDOWN,
+        min_confidence=Config.MIN_AI_CONFIDENCE,
+        risk_percent=Config.M7_RISK_PERCENT,
+        filter_config=filter_cfg,
+        pullback_candles=Config.M7_PULLBACK_CANDLES,
+        breakout_window=Config.M7_BREAKOUT_WINDOW,
+        sl_atr_multiplier=Config.M7_SL_ATR_MULTIPLIER,
+        tp_atr_multiplier=Config.M7_TP_ATR_MULTIPLIER,
+        broker_meta=broker_meta,
+    )
+
+    print(f"  In-Sample:  {is_m.standard.num_trades} trades, "
+          f"return={is_m.standard.return_pct:.2%}, "
+          f"max_dd={is_m.standard.max_drawdown:.2%}")
+    print(f"  Out-Sample: {oos_m.standard.num_trades} trades, "
+          f"return={oos_m.standard.return_pct:.2%}, "
+          f"max_dd={oos_m.standard.max_drawdown:.2%}")
+
+    # Overfit warning
+    if is_m.standard.return_pct > 0 and oos_m.standard.return_pct < 0:
+        print(f"\n  WARNING: Strategy shows positive in-sample but negative out-of-sample.")
+        print(f"           Possible overfitting. Do NOT claim profitability.")
+    elif is_m.standard.return_pct > 0 and oos_m.standard.return_pct > 0:
+        print(f"\n  NOTE: Both in-sample and out-of-sample are positive.")
+        print(f"        This is NOT a guarantee of future performance.")
+
+    print(f"\n  NOTE: M7 backtest uses PaperBroker only. No real orders placed.")
+    print(f"        Results are NOT financial advice.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="AshtradingAI Trading Bot")
     parser.add_argument("--mode", required=True,
                         choices=["backtest", "paper", "status", "leaderboard",
                                  "tournament", "tournament-backtest",
-                                 "paper-live", "paper-live-test", "mt5-demo", "m7"],
+                                 "paper-live", "paper-live-test", "mt5-demo",
+                                 "m7", "m7-backtest"],
                         help="Operating mode")
     args = parser.parse_args()
 
@@ -1281,6 +1441,8 @@ def main():
         cmd_mt5_demo(args)
     elif args.mode == "m7":
         cmd_m7(args)
+    elif args.mode == "m7-backtest":
+        cmd_m7_backtest(args)
 
 
 if __name__ == "__main__":

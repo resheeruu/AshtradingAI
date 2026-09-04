@@ -427,6 +427,16 @@ class StrategyEngine:
             confidence = 0.6
             decision = "HOLD"
 
+        # AI confirmation gate: direction must match
+        expected = "BUY" if self.state.direction == "LONG" else "SELL"
+        if decision != expected:
+            # AI does not confirm direction — reject entry
+            logger.info(
+                "M7 %s AI rejection: expected %s, got %s (conf=%.2f)",
+                self.symbol, expected, decision, confidence,
+            )
+            confidence = 0.0
+
         return StrategySignal(
             symbol=self.symbol,
             direction="BUY" if self.state.direction == "LONG" else "SELL",

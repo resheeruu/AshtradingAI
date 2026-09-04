@@ -8,6 +8,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional, Dict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.indicators.technical import ema, atr
 
@@ -226,7 +227,11 @@ class PriceEMAFilter:
 
 
 class CandleDirectionFilter:
-    """Candle direction confirmation filter."""
+    """Candle direction confirmation filter.
+
+    Operates on COMPLETED candles only. Caller must strip the forming candle
+    before passing candles to this filter.
+    """
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
@@ -236,18 +241,18 @@ class CandleDirectionFilter:
         candles: List[Dict],
         direction: str = "LONG",
     ) -> FilterResult:
-        """Evaluate candle direction. Uses the LAST COMPLETED candle (index -2 if current is forming).
-        
+        """Evaluate candle direction. Uses the LAST candle in the list.
+
+        Caller MUST pass only completed candles (forming candle already stripped).
         Fails closed on invalid data.
         """
         if not self.enabled:
             return FilterResult(passed=True, reason="disabled")
 
-        # Use the second-to-last candle (completed, not forming)
-        if len(candles) < 2:
-            return FilterResult(passed=False, reason=f"insufficient candles: need 2, got {len(candles)}")
+        if len(candles) < 1:
+            return FilterResult(passed=False, reason=f"insufficient candles: need 1, got {len(candles)}")
 
-        candle = candles[-2]  # Last completed candle
+        candle = candles[-1]  # Last completed candle
         open_ = candle.get("open", 0)
         close = candle.get("close", 0)
 
@@ -336,7 +341,11 @@ class SessionFilter:
         self,
         candle_timestamp: str,
     ) -> FilterResult:
-        """Evaluate session filter. Fails closed on invalid data."""
+        """Evaluate session filter with timezone conversion.
+
+        Converts the candle timestamp to the configured timezone before
+        checking session hours. Fails closed on invalid data or timezone.
+        """
         if not self.enabled:
             return FilterResult(passed=True, reason="disabled")
 
@@ -345,19 +354,30 @@ class SessionFilter:
         except (ValueError, TypeError):
             return FilterResult(passed=False, reason=f"invalid timestamp: {candle_timestamp}")
 
-        # Convert to target timezone (simplified: assume UTC offset)
-        # For full timezone support, use pytz/zoneinfo
-        hour = dt.hour
-        minute = dt.minute
+        # Convert to target timezone
+        tz_str = self.timezone_str.upper()
+        if tz_str in ("UTC", "GMT"):
+            tz = timezone.utc
+        else:
+            try:
+                tz = ZoneInfo(self.timezone_str)
+            except (ZoneInfoNotFoundError, KeyError):
+                return FilterResult(passed=False, reason=f"unknown timezone: {self.timezone_str}")
+
+        # If timestamp is naive, assume UTC; then convert to target tz
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_local = dt.astimezone(tz)
+
+        hour = dt_local.hour
+        minute = dt_local.minute
         current_minutes = hour * 60 + minute
         start_minutes = self.start_hour * 60 + self.start_minute
         end_minutes = self.end_hour * 60 + self.end_minute
 
         if start_minutes <= end_minutes:
-            # Normal session (e.g., 9:00 - 17:00)
             in_session = start_minutes <= current_minutes <= end_minutes
         else:
-            # Midnight-crossing session (e.g., 22:00 - 6:00)
             in_session = current_minutes >= start_minutes or current_minutes <= end_minutes
 
         if not in_session:
