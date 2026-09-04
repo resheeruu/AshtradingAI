@@ -279,6 +279,20 @@ def cmd_status(args):
                 print(f"  Symbol Map:           {sm}")
             except json.JSONDecodeError:
                 print(f"  Symbol Map:           (invalid JSON)")
+
+    # M7 configuration
+    if Config.M7_ENABLED:
+        print(f"\n--- M7 Strategy ---")
+        print(f"  M7 Enabled:           {Config.M7_ENABLED}")
+        print(f"  ATR Filter:           {'ON' if Config.M7_ATR_FILTER_ENABLED else 'OFF'}")
+        print(f"  Angle Filter:         {'ON' if Config.M7_ANGLE_FILTER_ENABLED else 'OFF'}")
+        print(f"  Price/EMA:            {'ON' if Config.M7_PRICE_EMA_FILTER_ENABLED else 'OFF'}")
+        print(f"  Candle Filter:        {'ON' if Config.M7_CANDLE_FILTER_ENABLED else 'OFF'}")
+        print(f"  EMA Order:            {'ON' if Config.M7_EMA_ORDER_FILTER_ENABLED else 'OFF'}")
+        print(f"  Session Filter:       {'ON' if Config.M7_SESSION_FILTER_ENABLED else 'OFF'}")
+        print(f"  Pullback:             {Config.M7_PULLBACK_CANDLES} candles")
+        print(f"  Breakout Window:      {Config.M7_BREAKOUT_WINDOW} candles")
+        print(f"  Risk Percent:         {Config.M7_RISK_PERCENT:.1%}")
     
     errors = Config.validate()
     if errors:
@@ -947,7 +961,7 @@ def cmd_mt5_demo(args):
         )
         risk = RiskManager(
             max_position_size=Config.MAX_POSITION_SIZE,
-            max_open_positions=Config.MAX_OPEN_positions,
+        max_open_positions=Config.MAX_OPEN_POSITIONS,
             max_daily_loss=Config.MAX_DAILY_LOSS,
             min_confidence=Config.MIN_AI_CONFIDENCE,
         )
@@ -1069,12 +1083,178 @@ def cmd_mt5_demo(args):
     print(f"\nMT5 demo session complete: {session_id}")
 
 
+def cmd_m7(args):
+    """Run M7 Advanced Strategy & Risk Monitor (read-only mode).
+
+    Demonstrates the full M7 pipeline:
+    Market Data → Filters → State Machine → AI Decision → Risk Check → Monitoring
+
+    In read-only mode: no orders are placed.
+    """
+    from src.strategy.engine import StrategyEngine, StrategyPhase
+    from src.strategy.filters import build_filter_config_from_settings
+    from src.risk.manager import RiskManager, BrokerMetadata
+    from src.portfolio.portfolio import Portfolio
+
+    print("=" * 50)
+    print("  ASHTRADINGAI M7 ADVANCED STRATEGY MONITOR")
+    print("=" * 50)
+
+    if not Config.M7_ENABLED:
+        print("\n  M7_ENABLED=false — M7 is disabled.")
+        print("  Set M7_ENABLED=true to activate advanced strategy monitoring.")
+        print("\n  Showing M7 configuration only:\n")
+
+    # Build filter config from settings
+    filter_cfg = build_filter_config_from_settings(Config.as_dict())
+
+    portfolio = Portfolio("m7-monitor", Config.STARTING_BALANCE)
+    risk = RiskManager(
+        max_position_size=Config.MAX_POSITION_SIZE,
+        max_open_positions=Config.MAX_OPEN_POSITIONS,
+        max_daily_loss=Config.MAX_DAILY_LOSS,
+        max_drawdown=Config.MAX_DRAWDOWN,
+        min_confidence=Config.MIN_AI_CONFIDENCE,
+        risk_percent=Config.M7_RISK_PERCENT,
+    )
+
+    # Show M7 configuration
+    print("  --- M7 Configuration ---")
+    print(f"  Enabled:         {Config.M7_ENABLED}")
+    print(f"  ATR Filter:      {'ON' if Config.M7_ATR_FILTER_ENABLED else 'OFF'} (min={Config.M7_ATR_MIN}, max={Config.M7_ATR_MAX})")
+    print(f"  Angle Filter:    {'ON' if Config.M7_ANGLE_FILTER_ENABLED else 'OFF'} (period={Config.M7_ANGLE_EMA_PERIOD}, min={Config.M7_MIN_ANGLE})")
+    print(f"  Price/EMA:       {'ON' if Config.M7_PRICE_EMA_FILTER_ENABLED else 'OFF'} (period={Config.M7_PRICE_EMA_PERIOD})")
+    print(f"  Candle Filter:   {'ON' if Config.M7_CANDLE_FILTER_ENABLED else 'OFF'}")
+    print(f"  EMA Order:       {'ON' if Config.M7_EMA_ORDER_FILTER_ENABLED else 'OFF'} ({Config.M7_EMA_FAST_PERIOD}/{Config.M7_EMA_MEDIUM_PERIOD}/{Config.M7_EMA_SLOW_PERIOD})")
+    print(f"  Session Filter:  {'ON' if Config.M7_SESSION_FILTER_ENABLED else 'OFF'} ({Config.M7_SESSION_START_HOUR:02d}:{Config.M7_SESSION_START_MINUTE:02d}-{Config.M7_SESSION_END_HOUR:02d}:{Config.M7_SESSION_END_MINUTE:02d} {Config.M7_SESSION_TIMEZONE})")
+    print(f"  Pullback:        {Config.M7_PULLBACK_CANDLES} candles")
+    print(f"  Breakout Window: {Config.M7_BREAKOUT_WINDOW} candles")
+    print(f"  Risk Percent:    {Config.M7_RISK_PERCENT:.1%}")
+    print(f"  SL Multiplier:   {Config.M7_SL_ATR_MULTIPLIER}x ATR")
+    print(f"  TP Multiplier:   {Config.M7_TP_ATR_MULTIPLIER}x ATR")
+
+    if not Config.M7_ENABLED:
+        errors = Config.validate()
+        if errors:
+            print("\n  CONFIG ERRORS:")
+            for e in errors:
+                print(f"    - {e}")
+        else:
+            print("\n  Config: OK")
+        return
+
+    # Fetch data
+    print("\n--- Fetching market data ---")
+    if Config.DATA_SOURCE == "live":
+        data = _fetch_live_data(Config.EXCHANGE, Config.SYMBOLS, Config.TIMEFRAME, Config.CANDLE_LIMIT)
+    else:
+        data = {sym: generate_synthetic_candles(symbol=sym, periods=Config.CANDLE_LIMIT) for sym in Config.SYMBOLS}
+
+    # Create strategy engines for each symbol
+    engines = {}
+    for sym in Config.SYMBOLS:
+        ai = TestStrategy(ai_id=f"m7-{sym}")
+        engine = StrategyEngine(
+            ai=ai,
+            symbol=sym,
+            timeframe=Config.TIMEFRAME,
+            filter_config=filter_cfg,
+            pullback_candles=Config.M7_PULLBACK_CANDLES,
+            breakout_window=Config.M7_BREAKOUT_WINDOW,
+            sl_atr_multiplier=Config.M7_SL_ATR_MULTIPLIER,
+            tp_atr_multiplier=Config.M7_TP_ATR_MULTIPLIER,
+            risk_percent=Config.M7_RISK_PERCENT,
+        )
+        engines[sym] = engine
+
+    # Process last few candles through the pipeline
+    print("\n--- Running M7 Pipeline ---")
+    for sym, candles in data.items():
+        if sym not in engines:
+            continue
+        engine = engines[sym]
+
+        if len(candles) < 5:
+            print(f"\n  {sym}: insufficient data ({len(candles)} candles)")
+            continue
+
+        # Process last 3 completed candles
+        for i in range(max(0, len(candles) - 3), len(candles) - 1):
+            subset = candles[:i + 2]  # +1 for forming candle
+            signal = engine.process_candle(
+                subset,
+                portfolio_balance=portfolio.balance,
+                open_positions=list(portfolio.positions.keys()),
+            )
+
+        # Show current state
+        summary = engine.get_summary()
+        print(f"\n  {sym}")
+        print(f"  {'─' * 36}")
+        print(f"  Phase:       {summary['phase']}")
+        print(f"  Direction:   {summary['direction'] or '—'}")
+        print(f"  ATR:         {summary['atr']:.4f}")
+        print(f"  Pullback:    {summary['pullback_count']}/{summary['pullback_target']}")
+        print(f"  Window:      {summary['window_remaining']} candles")
+        print(f"  Setup:       {summary['setup_id'] or '—'}")
+        print(f"  Last Candle: {summary['last_candle'][:19] if summary['last_candle'] else '—'}")
+
+        # Run filters for display
+        if len(candles) > 2:
+            from src.strategy.filters import FilterCascade
+            cascade = FilterCascade(filter_cfg)
+            direction = engine._detect_direction(candles)
+            if direction:
+                completed = candles[:-1]
+                filter_result = cascade.evaluate(completed, direction)
+                for name, fr in filter_result.results.items():
+                    status = "PASS" if fr.passed else "BLOCK"
+                    print(f"  {name:12s} {status}" + (f" ({fr.reason})" if fr.reason and not fr.passed else ""))
+            else:
+                print(f"  Filters:     no directional setup detected")
+
+        # Show AI decision
+        from src.ai.base import MarketContext
+        ai = TestStrategy(ai_id=f"m7-{sym}")
+        ctx = MarketContext(
+            symbol=sym,
+            timeframe=Config.TIMEFRAME,
+            current_price=candles[-2]["close"] if len(candles) > 1 else 0,
+            candles=candles,
+            portfolio_balance=portfolio.balance,
+            open_positions=list(portfolio.positions.keys()),
+        )
+        try:
+            ai_decision = ai.decide(ctx)
+            print(f"  AI:          {ai_decision.get('decision', 'HOLD')} (conf={ai_decision.get('confidence', 0):.2f})")
+        except Exception:
+            print(f"  AI:          HOLD (error)")
+
+        # Risk status
+        print(f"  Risk:        {'ALLOWED' if not risk._kill_switch else 'BLOCKED (kill switch)'}")
+        print(f"  Position:    {portfolio.balance:,.2f}")
+
+    print(f"\n--- Session Summary ---")
+    print(f"  Balance:     ${portfolio.balance:,.2f}")
+    print(f"  Positions:   {len(portfolio.positions)}")
+    print(f"  Trades:      {len(portfolio.trade_history)}")
+    print(f"\n  NOTE: M7 monitor is READ-ONLY. No orders were placed.")
+
+    errors = Config.validate()
+    if errors:
+        print("\n  CONFIG ERRORS:")
+        for e in errors:
+            print(f"    - {e}")
+    else:
+        print("\n  Config: OK")
+
+
 def main():
     parser = argparse.ArgumentParser(description="AshtradingAI Trading Bot")
     parser.add_argument("--mode", required=True,
                         choices=["backtest", "paper", "status", "leaderboard",
                                  "tournament", "tournament-backtest",
-                                 "paper-live", "paper-live-test", "mt5-demo"],
+                                 "paper-live", "paper-live-test", "mt5-demo", "m7"],
                         help="Operating mode")
     args = parser.parse_args()
 
@@ -1099,6 +1279,8 @@ def main():
         cmd_paper_live_test(args)
     elif args.mode == "mt5-demo":
         cmd_mt5_demo(args)
+    elif args.mode == "m7":
+        cmd_m7(args)
 
 
 if __name__ == "__main__":

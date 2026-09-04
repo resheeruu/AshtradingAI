@@ -103,6 +103,38 @@ class Config:
     MT5_MAGIC_NUMBER: int = _int(os.getenv("MT5_MAGIC_NUMBER", "20260904"), 20260904)
     MT5_SYMBOL_MAP: str = os.getenv("MT5_SYMBOL_MAP", "")
 
+    # Milestone 7: Advanced Strategy & Risk Monitor
+    M7_ENABLED: bool = _bool(os.getenv("M7_ENABLED", "false"), False)
+    M7_ATR_FILTER_ENABLED: bool = _bool(os.getenv("M7_ATR_FILTER_ENABLED", "true"), True)
+    M7_ATR_MIN: float = _float(os.getenv("M7_ATR_MIN", "0.0"), 0.0)
+    M7_ATR_MAX: float = _float(os.getenv("M7_ATR_MAX", "0.0"), 0.0)  # 0 = no max
+    M7_ATR_INCREASE_THRESHOLD: float = _float(os.getenv("M7_ATR_INCREASE_THRESHOLD", "0.0"), 0.0)
+    M7_ATR_DECREASE_THRESHOLD: float = _float(os.getenv("M7_ATR_DECREASE_THRESHOLD", "0.0"), 0.0)
+    M7_ATR_PERIOD: int = _int(os.getenv("M7_ATR_PERIOD", "14"), 14)
+    M7_ANGLE_FILTER_ENABLED: bool = _bool(os.getenv("M7_ANGLE_FILTER_ENABLED", "true"), True)
+    M7_ANGLE_EMA_PERIOD: int = _int(os.getenv("M7_ANGLE_EMA_PERIOD", "21"), 21)
+    M7_ANGLE_SCALE_FACTOR: float = _float(os.getenv("M7_ANGLE_SCALE_FACTOR", "10000.0"), 10000.0)
+    M7_MIN_ANGLE: float = _float(os.getenv("M7_MIN_ANGLE", "0.0002"), 0.0002)
+    M7_MAX_ANGLE: float = _float(os.getenv("M7_MAX_ANGLE", "0.0"), 0.0)  # 0 = no max
+    M7_PRICE_EMA_FILTER_ENABLED: bool = _bool(os.getenv("M7_PRICE_EMA_FILTER_ENABLED", "true"), True)
+    M7_PRICE_EMA_PERIOD: int = _int(os.getenv("M7_PRICE_EMA_PERIOD", "50"), 50)
+    M7_CANDLE_FILTER_ENABLED: bool = _bool(os.getenv("M7_CANDLE_FILTER_ENABLED", "true"), True)
+    M7_EMA_ORDER_FILTER_ENABLED: bool = _bool(os.getenv("M7_EMA_ORDER_FILTER_ENABLED", "true"), True)
+    M7_EMA_FAST_PERIOD: int = _int(os.getenv("M7_EMA_FAST_PERIOD", "12"), 12)
+    M7_EMA_MEDIUM_PERIOD: int = _int(os.getenv("M7_EMA_MEDIUM_PERIOD", "26"), 26)
+    M7_EMA_SLOW_PERIOD: int = _int(os.getenv("M7_EMA_SLOW_PERIOD", "50"), 50)
+    M7_SESSION_FILTER_ENABLED: bool = _bool(os.getenv("M7_SESSION_FILTER_ENABLED", "false"), False)
+    M7_SESSION_START_HOUR: int = _int(os.getenv("M7_SESSION_START_HOUR", "0"), 0)
+    M7_SESSION_START_MINUTE: int = _int(os.getenv("M7_SESSION_START_MINUTE", "0"), 0)
+    M7_SESSION_END_HOUR: int = _int(os.getenv("M7_SESSION_END_HOUR", "23"), 23)
+    M7_SESSION_END_MINUTE: int = _int(os.getenv("M7_SESSION_END_MINUTE", "59"), 59)
+    M7_SESSION_TIMEZONE: str = os.getenv("M7_SESSION_TIMEZONE", "UTC")
+    M7_PULLBACK_CANDLES: int = _int(os.getenv("M7_PULLBACK_CANDLES", "2"), 2)
+    M7_BREAKOUT_WINDOW: int = _int(os.getenv("M7_BREAKOUT_WINDOW", "3"), 3)
+    M7_RISK_PERCENT: float = _float(os.getenv("M7_RISK_PERCENT", "0.01"), 0.01)
+    M7_SL_ATR_MULTIPLIER: float = _float(os.getenv("M7_SL_ATR_MULTIPLIER", "2.0"), 2.0)
+    M7_TP_ATR_MULTIPLIER: float = _float(os.getenv("M7_TP_ATR_MULTIPLIER", "3.0"), 3.0)
+
     @classmethod
     def validate(cls) -> list[str]:
         """Return list of validation errors. Empty list means OK."""
@@ -164,4 +196,6 @@ class Config:
             "MT5_DEMO_ONLY": cls.MT5_DEMO_ONLY,
             "MT5_DEMO_TRADING_ENABLED": cls.MT5_DEMO_TRADING_ENABLED,
             "MT5_MAGIC_NUMBER": cls.MT5_MAGIC_NUMBER,
+            "M7_ENABLED": cls.M7_ENABLED,
+            "M7_RISK_PERCENT": cls.M7_RISK_PERCENT,
         }

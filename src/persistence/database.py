@@ -242,6 +242,40 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_mt5_orders_ticket ON mt5_orders(mt5_ticket);
             CREATE INDEX IF NOT EXISTS idx_mt5_signals_session ON mt5_signals(session_id);
             CREATE INDEX IF NOT EXISTS idx_mt5_signals_key ON mt5_signals(signal_key);
+
+            CREATE TABLE IF NOT EXISTS m7_signals (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                candle_timestamp TEXT NOT NULL,
+                price REAL,
+                atr_value REAL,
+                stop_loss REAL,
+                take_profit REAL,
+                confidence REAL,
+                reason TEXT,
+                setup_id TEXT,
+                filter_results_json TEXT,
+                risk_decision TEXT,
+                risk_reason TEXT,
+                position_size REAL,
+                execution_result TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS m7_state (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL UNIQUE,
+                symbol TEXT NOT NULL,
+                state_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_m7_signals_session ON m7_signals(session_id);
+            CREATE INDEX IF NOT EXISTS idx_m7_signals_symbol ON m7_signals(symbol);
+            CREATE INDEX IF NOT EXISTS idx_m7_state_session ON m7_state(session_id);
         """)
         conn.commit()
         # Migrate existing tables to add new columns if missing
@@ -824,3 +858,110 @@ class Database:
             (session_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── M7 Signal Persistence ─────────────────────────────────────────
+
+    def log_m7_signal(
+        self,
+        session_id: str,
+        symbol: str,
+        direction: str,
+        phase: str,
+        candle_timestamp: str,
+        price: float = 0.0,
+        atr_value: float = 0.0,
+        stop_loss: float = 0.0,
+        take_profit: float = 0.0,
+        confidence: float = 0.0,
+        reason: str = "",
+        setup_id: str = "",
+        filter_results_json: str = "{}",
+        risk_decision: str = "",
+        risk_reason: str = "",
+        position_size: float = 0.0,
+        execution_result: str = "",
+    ) -> str:
+        """Persist an M7 signal for audit trail."""
+        signal_id = str(uuid.uuid4())[:12]
+        ts = datetime.now(timezone.utc).isoformat()
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO m7_signals
+               (id, session_id, symbol, direction, phase, candle_timestamp,
+                price, atr_value, stop_loss, take_profit, confidence,
+                reason, setup_id, filter_results_json, risk_decision,
+                risk_reason, position_size, execution_result, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (signal_id, session_id, symbol, direction, phase, candle_timestamp,
+             price, atr_value, stop_loss, take_profit, confidence,
+             reason, setup_id, filter_results_json, risk_decision,
+             risk_reason, position_size, execution_result, ts),
+        )
+        conn.commit()
+        return signal_id
+
+    def get_m7_signals_by_session(self, session_id: str) -> List[Dict]:
+        """Get all M7 signals for a session."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM m7_signals WHERE session_id = ? ORDER BY created_at",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def save_m7_state(
+        self,
+        session_id: str,
+        symbol: str,
+        state_json: str,
+    ) -> None:
+        """Persist M7 strategy state for restart survival."""
+        conn = self._get_conn()
+        ts = datetime.now(timezone.utc).isoformat()
+        existing = conn.execute(
+            "SELECT id FROM m7_state WHERE session_id = ? AND symbol = ?",
+            (session_id, symbol),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE m7_state SET state_json = ?, updated_at = ? WHERE id = ?",
+                (state_json, ts, existing[0]),
+            )
+        else:
+            record_id = str(uuid.uuid4())[:12]
+            conn.execute(
+                """INSERT INTO m7_state (id, session_id, symbol, state_json, updated_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (record_id, session_id, symbol, state_json, ts),
+            )
+        conn.commit()
+
+    def load_m7_state(
+        self,
+        session_id: str,
+        symbol: str,
+    ) -> Optional[Dict]:
+        """Load persisted M7 strategy state."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT state_json FROM m7_state WHERE session_id = ? AND symbol = ?",
+            (session_id, symbol),
+        ).fetchone()
+        if row:
+            try:
+                return json.loads(row[0])
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
+
+    def clear_m7_state(self, session_id: str, symbol: str = "") -> None:
+        """Clear M7 state (e.g., after stale setup reset)."""
+        conn = self._get_conn()
+        if symbol:
+            conn.execute(
+                "DELETE FROM m7_state WHERE session_id = ? AND symbol = ?",
+                (session_id, symbol),
+            )
+        else:
+            conn.execute("DELETE FROM m7_state WHERE session_id = ?", (session_id,))
+        conn.commit()
