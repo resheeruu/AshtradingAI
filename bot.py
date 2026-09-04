@@ -896,9 +896,15 @@ def cmd_mt5_demo(args):
     # Show health
     conn.health.print_summary()
 
-    if not conn.can_trade():
-        print("ERROR: MT5 cannot trade (health gate failed)")
-        sys.exit(1)
+    # Determine mode: read-only or trading-enabled
+    trading_mode = Config.MT5_DEMO_TRADING_ENABLED
+    if not trading_mode:
+        print("\n  MT5_DEMO_TRADING_ENABLED=false — READ-ONLY mode")
+        print("  Will NOT place any orders.")
+    else:
+        if not conn.can_trade():
+            print("ERROR: MT5 cannot trade (health gate failed)")
+            sys.exit(1)
 
     # Initialize components
     ai = TestStrategy(ai_id="mt5-demo-strategy")
@@ -924,22 +930,27 @@ def cmd_mt5_demo(args):
             logger.warning("Could not create session: %s", e)
 
     market_data = MT5MarketData(conn)
-    broker = MT5DemoBroker(
-        conn,
-        symbol_map=symbol_map,
-        magic_number=Config.MT5_MAGIC_NUMBER,
-    )
 
     from src.risk.manager import RiskManager
     from src.portfolio.portfolio import Portfolio
 
     portfolio = Portfolio(session_id, Config.STARTING_BALANCE)
-    risk = RiskManager(
-        max_position_size=Config.MAX_POSITION_SIZE,
-        max_open_positions=Config.MAX_OPEN_positions,
-        max_daily_loss=Config.MAX_DAILY_LOSS,
-        min_confidence=Config.MIN_AI_CONFIDENCE,
-    )
+
+    # Only create broker and risk manager when trading is enabled
+    broker = None
+    risk = None
+    if trading_mode:
+        broker = MT5DemoBroker(
+            conn,
+            symbol_map=symbol_map,
+            magic_number=Config.MT5_MAGIC_NUMBER,
+        )
+        risk = RiskManager(
+            max_position_size=Config.MAX_POSITION_SIZE,
+            max_open_positions=Config.MAX_OPEN_positions,
+            max_daily_loss=Config.MAX_DAILY_LOSS,
+            min_confidence=Config.MIN_AI_CONFIDENCE,
+        )
 
     print(f"\n--- Fetching candles ---")
     candle_data = {}
@@ -982,8 +993,12 @@ def cmd_mt5_demo(args):
 
         print(f"  {sym}: {decision.action} (conf={decision.confidence:.2f})")
 
+        if not trading_mode:
+            # Read-only: log decision, never execute
+            print(f"    -> READ-ONLY: no order sent")
+            continue
+
         if decision.action in ("BUY", "SELL"):
-            from src.trading.orders import Order
             risk_check = risk.evaluate(
                 symbol=sym,
                 side=decision.action.lower(),
@@ -1029,6 +1044,7 @@ def cmd_mt5_demo(args):
     # Summary
     print(f"\n--- Session Summary ---")
     print(f"  Session: {session_id}")
+    print(f"  Trading mode: {'ENABLED' if trading_mode else 'READ-ONLY'}")
     print(f"  Portfolio Balance: ${portfolio.balance:,.2f}")
     print(f"  Open Positions: {len(portfolio.positions)}")
     print(f"  Total Trades: {len(portfolio.trade_history)}")

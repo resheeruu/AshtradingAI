@@ -121,9 +121,6 @@ class Config:
             errors.append("CANDLE_LIMIT must be between 1 and 5000")
         if cls.MT5_ENABLED and cls.LIVE_TRADING:
             errors.append("MT5_ENABLED and LIVE_TRADING cannot both be true in M6")
-        if cls.MT5_ENABLED and cls.MT5_DEMO_ONLY and cls.MT5_DEMO_TRADING_ENABLED:
-            # This is the allowed state: MT5 enabled, demo only, demo trading on
-            pass
         return errors
 
     @classmethod

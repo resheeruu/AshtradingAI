@@ -1194,3 +1194,197 @@ class TestMT5Reconciliation:
         orders = db.get_mt5_orders_by_session("recon-test")
         assert orders[0]["status"] == "filled"
         db.close()
+
+
+# ============================================================
+# Read-Only MT5 Mode Tests (MT5_DEMO_TRADING_ENABLED=false)
+# ============================================================
+
+class TestMT5ReadOnlyMode:
+    """Tests proving MT5_DEMO_TRADING_ENABLED=false permits read-only mode
+    and blocks all order execution."""
+
+    def test_readonly_permits_connection(self):
+        """1. MT5_DEMO_TRADING_ENABLED=false permits read-only MT5 mode."""
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        result = conn.connect()
+        assert result is True
+        assert conn.is_connected() is True
+        assert conn.health.is_connected is True
+        assert conn.health.is_demo_verified is True
+        assert conn.can_trade() is False
+
+    def test_readonly_zero_order_send_calls(self):
+        """2. Read-only mode makes zero order_send() calls."""
+        from src.portfolio.portfolio import Portfolio
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        broker = MockMT5DemoBroker(conn)
+        p = Portfolio("readonly-test", 10000)
+
+        initial_count = len(broker._orders_sent)
+        broker.execute_buy(p, "BTCUSD", 50000, 0.01)
+        assert len(broker._orders_sent) == initial_count
+        broker.execute_sell(p, "BTCUSD", 50000)
+        assert len(broker._orders_sent) == initial_count
+
+    def test_readonly_blocks_buy(self):
+        """3. MT5_DEMO_TRADING_ENABLED=false cannot execute BUY."""
+        from src.portfolio.portfolio import Portfolio
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        broker = MockMT5DemoBroker(conn)
+        p = Portfolio("readonly-buy", 10000)
+        order = broker.execute_buy(p, "BTCUSD", 50000, 0.01)
+        assert order is None
+
+    def test_readonly_blocks_sell(self):
+        """3. MT5_DEMO_TRADING_ENABLED=false cannot execute SELL."""
+        from src.portfolio.portfolio import Portfolio
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        broker = MockMT5DemoBroker(conn)
+        p = Portfolio("readonly-sell", 10000)
+        p.open_position("BTCUSD", "long", 50000, 0.01)
+        order = broker.execute_sell(p, "BTCUSD", 51000)
+        assert order is None
+
+    def test_trading_enabled_requires_all_safety_gates(self):
+        """4. MT5_DEMO_TRADING_ENABLED=true still requires all demo/account/trading safety gates."""
+        from src.portfolio.portfolio import Portfolio
+
+        # demo verification required
+        conn = MockMT5ConnectionManager(demo_trading_enabled=True, demo_only=True, account_trade_mode=1)
+        assert conn.connect() is False
+        assert conn.can_trade() is False
+
+        # terminal trade permission required
+        conn2 = MockMT5ConnectionManager(demo_trading_enabled=True, terminal_trade_allowed=False)
+        assert conn2.connect() is False
+        assert conn2.can_trade() is False
+
+        # server mismatch required
+        conn3 = MockMT5ConnectionManager(
+            demo_trading_enabled=True,
+            expected_server="WrongServer",
+            server="MetaQuotes-Demo",
+        )
+        assert conn3.connect() is False
+
+        # login mismatch required
+        conn4 = MockMT5ConnectionManager(
+            demo_trading_enabled=True,
+            expected_login=99999,
+            login=12345678,
+        )
+        assert conn4.connect() is False
+
+    def test_live_trading_blocks_mt5_demo(self):
+        """5. LIVE_TRADING=true always blocks MT5 demo mode."""
+        conn = MockMT5ConnectionManager(demo_trading_enabled=True, live_trading=True)
+        result = conn.connect()
+        assert result is False
+        assert conn.health.state == MT5State.ERROR
+        assert conn.can_trade() is False
+
+    def test_non_demo_account_blocks(self):
+        """6. Non-demo account always blocks."""
+        conn = MockMT5ConnectionManager(demo_only=True, account_trade_mode=1)
+        result = conn.connect()
+        assert result is False
+        assert conn.health.state == MT5State.NOT_DEMO
+
+    def test_trade_mode_none_blocks(self):
+        """7. trade_mode=None always blocks when demo_only=True."""
+        conn = MockMT5ConnectionManager(demo_only=True, account_trade_mode=None)
+        result = conn.connect()
+        assert result is False
+        assert conn.health.state == MT5State.NOT_DEMO
+
+    def test_server_mismatch_blocks(self):
+        """8. Server mismatch blocks connection."""
+        conn = MockMT5ConnectionManager(
+            expected_server="ExpectedServer",
+            server="ActualServer",
+        )
+        result = conn.connect()
+        assert result is False
+        assert conn.health.state == MT5State.ACCOUNT_MISMATCH
+
+    def test_login_mismatch_blocks(self):
+        """8. Login mismatch blocks connection."""
+        conn = MockMT5ConnectionManager(
+            expected_login=11111,
+            login=22222,
+        )
+        result = conn.connect()
+        assert result is False
+        assert conn.health.state == MT5State.ACCOUNT_MISMATCH
+
+    def test_readonly_allows_account_info(self):
+        """Read-only mode can still read account information."""
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        info = conn.get_account_info()
+        assert info is not None
+        assert "login" in info
+        assert "balance" in info
+        assert "trade_mode" in info
+
+    def test_readonly_allows_terminal_info(self):
+        """Read-only mode can still read terminal information."""
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        info = conn.get_terminal_info()
+        assert info is not None
+        assert "version" in info
+
+    def test_readonly_allows_symbol_info(self):
+        """Read-only mode can still read symbol information."""
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        info = conn.symbol_info("BTCUSD")
+        assert info is not None
+        assert info["name"] == "BTCUSD"
+
+    def test_readonly_health_summary(self):
+        """Read-only mode shows correct health state."""
+        conn = MockMT5ConnectionManager(demo_trading_enabled=False)
+        conn.connect()
+        summary = conn.health.get_summary()
+        assert summary["connected"] is True
+        assert summary["demo_verified"] is True
+        assert summary["trade_enabled"] is False
+        assert summary["can_trade"] is False
+
+    def test_readonly_allows_reconciliation(self):
+        """Read-only mode allows reconciliation (read-only checks)."""
+        import tempfile
+        from src.persistence.database import Database
+        from pathlib import Path
+
+        f = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        db = Database(db_path=Path(f.name))
+        db.connect()
+
+        order_id = db.log_mt5_order(
+            session_id="readonly-recon", symbol="BTCUSD", mt5_symbol="BTCUSD",
+            side="buy", volume=0.01, price=50000, mt5_ticket=999,
+            status="pending",
+        )
+
+        conn = MockMT5ConnectionManager(
+            demo_trading_enabled=False,
+            positions=[{
+                "ticket": 999, "symbol": "BTCUSD", "type": 0,
+                "volume": 0.01, "price_open": 50000, "price_current": 51000,
+                "sl": 0, "tp": 0, "profit": 10, "magic": 20260904,
+                "comment": "", "time": 0,
+            }],
+        )
+        conn.connect()
+        broker = MockMT5DemoBroker(conn, database=db, session_id="readonly-recon")
+        results = broker.reconcile()
+        assert len(results) == 1
+        assert results[0]["status"] == "filled"
+        db.close()
