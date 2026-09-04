@@ -89,6 +89,20 @@ class Config:
     MARKET_RETRY_SECONDS: int = _int(os.getenv("MARKET_RETRY_SECONDS", "30"), 30)
     PAPER_HEARTBEAT_SECONDS: int = _int(os.getenv("PAPER_HEARTBEAT_SECONDS", "300"), 300)
 
+    # Milestone 6: MT5 Demo configuration
+    MT5_ENABLED: bool = _bool(os.getenv("MT5_ENABLED", "false"), False)
+    MT5_DEMO_ONLY: bool = _bool(os.getenv("MT5_DEMO_ONLY", "true"), True)
+    MT5_DEMO_TRADING_ENABLED: bool = _bool(os.getenv("MT5_DEMO_TRADING_ENABLED", "false"), False)
+    MT5_PATH: str = os.getenv("MT5_PATH", "")
+    MT5_LOGIN: int = _int(os.getenv("MT5_LOGIN", "0"), 0)
+    MT5_PASSWORD: str = os.getenv("MT5_PASSWORD", "")
+    MT5_SERVER: str = os.getenv("MT5_SERVER", "")
+    MT5_TIMEOUT: int = _int(os.getenv("MT5_TIMEOUT", "10000"), 10000)
+    MT5_EXPECTED_SERVER: str = os.getenv("MT5_EXPECTED_SERVER", "")
+    MT5_EXPECTED_LOGIN: int = _int(os.getenv("MT5_EXPECTED_LOGIN", "0"), 0)
+    MT5_MAGIC_NUMBER: int = _int(os.getenv("MT5_MAGIC_NUMBER", "20260904"), 20260904)
+    MT5_SYMBOL_MAP: str = os.getenv("MT5_SYMBOL_MAP", "")
+
     @classmethod
     def validate(cls) -> list[str]:
         """Return list of validation errors. Empty list means OK."""
@@ -105,6 +119,11 @@ class Config:
             errors.append("SLIPPAGE must be between 0 and 0.05")
         if cls.CANDLE_LIMIT < 1 or cls.CANDLE_LIMIT > 5000:
             errors.append("CANDLE_LIMIT must be between 1 and 5000")
+        if cls.MT5_ENABLED and cls.LIVE_TRADING:
+            errors.append("MT5_ENABLED and LIVE_TRADING cannot both be true in M6")
+        if cls.MT5_ENABLED and cls.MT5_DEMO_ONLY and cls.MT5_DEMO_TRADING_ENABLED:
+            # This is the allowed state: MT5 enabled, demo only, demo trading on
+            pass
         return errors
 
     @classmethod
@@ -144,4 +163,8 @@ class Config:
             "AI_FALLBACK_PROVIDER": cls.AI_FALLBACK_PROVIDER,
             "AI_FALLBACK_MODEL": cls.AI_FALLBACK_MODEL,
             "AI_FALLBACK_BASE_URL": cls.AI_FALLBACK_BASE_URL,
+            "MT5_ENABLED": cls.MT5_ENABLED,
+            "MT5_DEMO_ONLY": cls.MT5_DEMO_ONLY,
+            "MT5_DEMO_TRADING_ENABLED": cls.MT5_DEMO_TRADING_ENABLED,
+            "MT5_MAGIC_NUMBER": cls.MT5_MAGIC_NUMBER,
         }

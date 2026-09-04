@@ -482,8 +482,9 @@ class TestParticipantConfig:
         p = ParticipantConfig(id="test", provider="test")
         assert p.is_available is True
 
-    def test_provider_without_key_disabled(self):
+    def test_provider_without_key_disabled(self, monkeypatch):
         """Provider without API key should be disabled."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         p = ParticipantConfig(id="no-key", provider="openai")
         assert p.is_available is False
         assert p.enabled is False

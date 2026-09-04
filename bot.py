@@ -261,6 +261,24 @@ def cmd_status(args):
     finally:
         if db:
             db.close()
+
+    # MT5 configuration
+    if Config.MT5_ENABLED:
+        print(f"\n--- MT5 Configuration ---")
+        print(f"  MT5 Enabled:          {Config.MT5_ENABLED}")
+        print(f"  MT5 Demo Only:        {Config.MT5_DEMO_ONLY}")
+        print(f"  MT5 Demo Trading:     {Config.MT5_DEMO_TRADING_ENABLED}")
+        print(f"  MT5 Magic Number:     {Config.MT5_MAGIC_NUMBER}")
+        if Config.MT5_EXPECTED_SERVER:
+            print(f"  Expected Server:      {Config.MT5_EXPECTED_SERVER}")
+        if Config.MT5_EXPECTED_LOGIN:
+            print(f"  Expected Login:       {Config.MT5_EXPECTED_LOGIN}")
+        if Config.MT5_SYMBOL_MAP:
+            try:
+                sm = json.loads(Config.MT5_SYMBOL_MAP)
+                print(f"  Symbol Map:           {sm}")
+            except json.JSONDecodeError:
+                print(f"  Symbol Map:           (invalid JSON)")
     
     errors = Config.validate()
     if errors:
@@ -799,12 +817,248 @@ def cmd_paper_live_test(args):
     print("=" * 40)
 
 
+def cmd_mt5_demo(args):
+    """Run MT5 demo trading mode: real MT5 terminal + demo account."""
+    if Config.LIVE_TRADING:
+        logger.critical("LIVE_TRADING is enabled. MT5-demo refuses to start.")
+        print("ERROR: LIVE_TRADING=true. MT5-demo mode requires LIVE_TRADING=false.")
+        sys.exit(1)
+
+    if not Config.MT5_ENABLED:
+        logger.critical("MT5_ENABLED is false. MT5-demo refuses to start.")
+        print("ERROR: MT5_ENABLED=false. Set MT5_ENABLED=true to run MT5-demo mode.")
+        sys.exit(1)
+
+    if not Config.MT5_DEMO_ONLY:
+        logger.critical("MT5_DEMO_ONLY is false. MT5-demo refuses to start.")
+        print("ERROR: MT5_DEMO_ONLY=false. Demo mode requires MT5_DEMO_ONLY=true.")
+        sys.exit(1)
+
+    session_id = Config.PAPER_SESSION_ID or "mt5-demo-" + str(uuid.uuid4())[:8]
+    logger.info("Starting MT5 demo session (session=%s)", session_id)
+
+    print("=" * 50)
+    print("  ASHTRADINGAI MT5 DEMO MODE")
+    print("=" * 50)
+    print("  REAL MT5 terminal + DEMO account ONLY")
+    print("  No live trading. No live account bypass.")
+    print("  Safety: MT5_DEMO_ONLY=true | LIVE_TRADING=false")
+    print("=" * 50)
+
+    # Lazy MT5 import
+    try:
+        from src.mt5.connection import MT5ConnectionManager
+        from src.mt5.market_data import MT5MarketData
+        from src.mt5.broker import MT5DemoBroker
+        from src.mt5.health import MT5State
+    except ImportError as e:
+        logger.critical("Failed to import MT5 modules: %s", e)
+        print(f"ERROR: MT5 import failed: {e}")
+        print("Install MetaTrader5 package: pip install MetaTrader5")
+        sys.exit(1)
+
+    # Parse symbol map
+    symbol_map = {}
+    if Config.MT5_SYMBOL_MAP:
+        try:
+            symbol_map = json.loads(Config.MT5_SYMBOL_MAP)
+            logger.info("Loaded MT5 symbol map: %s", symbol_map)
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid MT5_SYMBOL_MAP JSON: %s — using defaults", e)
+
+    # Connect to MT5
+    print("\n--- Connecting to MT5 terminal ---")
+    conn = MT5ConnectionManager(
+        enabled=Config.MT5_ENABLED,
+        demo_only=Config.MT5_DEMO_ONLY,
+        demo_trading_enabled=Config.MT5_DEMO_TRADING_ENABLED,
+        path=Config.MT5_PATH,
+        login=Config.MT5_LOGIN,
+        password=Config.MT5_PASSWORD,
+        server=Config.MT5_SERVER,
+        timeout=Config.MT5_TIMEOUT,
+        expected_server=Config.MT5_EXPECTED_SERVER,
+        expected_login=Config.MT5_EXPECTED_LOGIN,
+        magic_number=Config.MT5_MAGIC_NUMBER,
+    )
+
+    if not conn.connect():
+        print(f"ERROR: MT5 connection failed. State: {conn.health.state.value}")
+        conn.health.print_summary()
+        sys.exit(1)
+
+    print(f"  Connected to MT5 terminal")
+    print(f"  Account: {conn.account_info.get('login', '?')}")
+    print(f"  Server: {conn.account_info.get('server', '?')}")
+    print(f"  Trade mode: {'DEMO' if conn.account_info.get('trade_mode') == 0 else 'NOT DEMO'}")
+    print(f"  Balance: {conn.account_info.get('balance', 0):.2f}")
+
+    # Show health
+    conn.health.print_summary()
+
+    if not conn.can_trade():
+        print("ERROR: MT5 cannot trade (health gate failed)")
+        sys.exit(1)
+
+    # Initialize components
+    ai = TestStrategy(ai_id="mt5-demo-strategy")
+    db = None
+    try:
+        db = _get_database()
+    except Exception as e:
+        logger.warning("Database unavailable: %s", e)
+
+    if db:
+        try:
+            db.create_paper_session(
+                session_id=session_id,
+                exchange="mt5",
+                symbols=",".join(Config.SYMBOLS),
+                timeframe=Config.TIMEFRAME,
+                data_source="mt5-demo",
+                starting_balance=Config.STARTING_BALANCE,
+                config_json=json.dumps(Config.as_dict()),
+                software_version="0.6.0",
+            )
+        except Exception as e:
+            logger.warning("Could not create session: %s", e)
+
+    market_data = MT5MarketData(conn)
+    broker = MT5DemoBroker(
+        conn,
+        symbol_map=symbol_map,
+        magic_number=Config.MT5_MAGIC_NUMBER,
+    )
+
+    from src.risk.manager import RiskManager
+    from src.portfolio.portfolio import Portfolio
+
+    portfolio = Portfolio(session_id, Config.STARTING_BALANCE)
+    risk = RiskManager(
+        max_position_size=Config.MAX_POSITION_SIZE,
+        max_open_positions=Config.MAX_OPEN_positions,
+        max_daily_loss=Config.MAX_DAILY_LOSS,
+        min_confidence=Config.MIN_AI_CONFIDENCE,
+    )
+
+    print(f"\n--- Fetching candles ---")
+    candle_data = {}
+    for sym in Config.SYMBOLS:
+        mt5_sym = symbol_map.get(sym, sym)
+        candles = market_data.fetch_candles(mt5_sym, Config.TIMEFRAME, Config.CANDLE_LIMIT)
+        if candles:
+            candle_data[sym] = candles
+            print(f"  {sym} ({mt5_sym}): {len(candles)} candles")
+        else:
+            print(f"  {sym} ({mt5_sym}): NO DATA")
+
+    if not candle_data:
+        print("\nERROR: No candle data available for any symbol")
+        conn.shutdown()
+        sys.exit(1)
+
+    # Process each symbol
+    print(f"\n--- Processing decisions ---")
+    for sym, candles in candle_data.items():
+        if len(candles) < 2:
+            print(f"  {sym}: insufficient candles, skipping")
+            continue
+
+        last_candle = candles[-1]
+        indicators = {}
+        try:
+            from src.indicators.technical import compute_all_indicators
+            indicators = compute_all_indicators(candles)
+        except Exception as e:
+            logger.warning("Indicator computation failed for %s: %s", sym, e)
+
+        decision = ai.decide(
+            symbol=sym,
+            candles=candles,
+            indicators=indicators,
+            portfolio=portfolio,
+            current_price=last_candle["close"],
+        )
+
+        print(f"  {sym}: {decision.action} (conf={decision.confidence:.2f})")
+
+        if decision.action in ("BUY", "SELL"):
+            from src.trading.orders import Order
+            risk_check = risk.evaluate(
+                symbol=sym,
+                side=decision.action.lower(),
+                confidence=decision.confidence,
+                position_size=decision.position_size,
+                portfolio=portfolio,
+            )
+
+            if risk_check.rejected:
+                print(f"    -> RISK REJECTED: {risk_check.reason}")
+                continue
+
+            order = broker.execute(
+                symbol=sym,
+                side=decision.action,
+                quantity=decision.position_size,
+                current_price=last_candle["close"],
+                risk_assessment=risk_check,
+            )
+
+            if order:
+                print(f"    -> ORDER FILLED: {order['id']}")
+                if db:
+                    try:
+                        db.log_trade(
+                            ai_id="mt5-demo-strategy",
+                            symbol=sym,
+                            side=order["side"],
+                            entry_price=order.get("price", last_candle["close"]),
+                            exit_price=0,
+                            quantity=order.get("quantity", 0),
+                            fee=0,
+                            slippage=0,
+                            pnl=0,
+                            balance=portfolio.balance,
+                            experiment_id=session_id,
+                        )
+                    except Exception as e:
+                        logger.warning("Could not log trade: %s", e)
+            else:
+                print(f"    -> ORDER FAILED")
+
+    # Summary
+    print(f"\n--- Session Summary ---")
+    print(f"  Session: {session_id}")
+    print(f"  Portfolio Balance: ${portfolio.balance:,.2f}")
+    print(f"  Open Positions: {len(portfolio.positions)}")
+    print(f"  Total Trades: {len(portfolio.trade_history)}")
+
+    if db:
+        try:
+            db.update_paper_session(
+                session_id=session_id,
+                current_balance=portfolio.balance,
+                trades_count=len(portfolio.trade_history),
+                status="completed",
+            )
+        except Exception as e:
+            logger.warning("Could not update session: %s", e)
+
+    # Shutdown
+    print(f"\n--- Shutting down MT5 ---")
+    conn.shutdown()
+    if db:
+        db.close()
+
+    print(f"\nMT5 demo session complete: {session_id}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="AshtradingAI Trading Bot")
     parser.add_argument("--mode", required=True,
                         choices=["backtest", "paper", "status", "leaderboard",
                                  "tournament", "tournament-backtest",
-                                 "paper-live", "paper-live-test"],
+                                 "paper-live", "paper-live-test", "mt5-demo"],
                         help="Operating mode")
     args = parser.parse_args()
 
@@ -827,6 +1081,8 @@ def main():
         cmd_paper_live(args)
     elif args.mode == "paper-live-test":
         cmd_paper_live_test(args)
+    elif args.mode == "mt5-demo":
+        cmd_mt5_demo(args)
 
 
 if __name__ == "__main__":

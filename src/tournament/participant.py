@@ -11,6 +11,9 @@ from src.ai.providers.openai_compatible import OpenAICompatibleProvider
 
 logger = logging.getLogger(__name__)
 
+# Sentinel to distinguish "no api_key argument passed" from "api_key='' passed"
+_UNSET = object()
+
 # Provider-specific environment variable mappings
 PROVIDER_CONFIGS = {
     "openai": {
@@ -65,17 +68,27 @@ class ParticipantConfig:
     provider: str  # e.g. "openai", "deepseek", "gemini", "test"
     model: str = ""
     enabled: bool = True
-    api_key: str = ""
+    api_key: str = _UNSET  # type: ignore[assignment]
     base_url: str = ""
     timeout: int = 30
     max_retries: int = 2
 
     def __post_init__(self):
         """Resolve provider-specific defaults from environment."""
+        # Distinguish: no api_key passed (use env) vs api_key="" passed (explicit empty → unavailable)
+        if self.api_key is _UNSET:
+            # Not explicitly provided — resolve from environment
+            self.api_key = ""
+            if self.provider in PROVIDER_CONFIGS:
+                cfg = PROVIDER_CONFIGS[self.provider]
+                if cfg["api_key_env"]:
+                    env_val = os.getenv(cfg["api_key_env"], "")
+                    if env_val:
+                        self.api_key = env_val
+        # else: api_key was explicitly passed (could be "" or a real key) — use as-is
+
         if self.provider in PROVIDER_CONFIGS:
             cfg = PROVIDER_CONFIGS[self.provider]
-            if not self.api_key and cfg["api_key_env"]:
-                self.api_key = os.getenv(cfg["api_key_env"], "")
             if not self.base_url:
                 self.base_url = cfg["base_url"]
             if not self.model:

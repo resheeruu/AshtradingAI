@@ -28,6 +28,7 @@ python bot.py --mode tournament          # Full tournament with audit trail
 python bot.py --mode tournament-backtest # Tournament backtest with test strategies
 python bot.py --mode paper-live          # Paper-live: real market data + simulated execution
 python bot.py --mode paper-live-test     # Deterministic test of full pipeline
+python bot.py --mode mt5-demo            # MT5 demo: real terminal + demo account
 python scripts/smoke_test.py             # Verification tests
 ```
 
@@ -344,6 +345,7 @@ Shows:
 
 - `python-dotenv` — environment variable loading
 - `requests` — HTTP client (for live market data via CCXT REST API)
+- `MetaTrader5` — MT5 terminal integration (optional, only when MT5_ENABLED=true)
 - Python 3.10+ standard library (including sqlite3)
 
 No numpy, pandas, or heavy ML frameworks. Bounded memory usage.
@@ -464,11 +466,82 @@ PAPER_HEARTBEAT_SECONDS=300 # Heartbeat logging interval
 - API keys never printed or saved to database
 - Kill switch available via risk manager
 
+## MT5 Demo Mode (Milestone 6)
+
+Real MT5 terminal + demo account. Trades go to actual MT5 demo server but with zero real money.
+
+### Requirements
+
+- Windows or VPS with MetaTrader 5 installed
+- Active demo account with broker
+- Python MetaTrader5 package (`pip install MetaTrader5`)
+
+### Quick Start
+
+```bash
+python bot.py --mode mt5-demo         # Run MT5 demo session
+python bot.py --mode status           # View MT5 configuration
+```
+
+### Safety Gates (Triple Protection)
+
+1. **MT5_DEMO_ONLY=true** — refuses non-demo accounts (hard block)
+2. **MT5_DEMO_TRADING_ENABLED=false** — orders disabled unless explicitly enabled
+3. **LIVE_TRADING=false** — master kill switch for all live operations
+
+All three must be satisfied. No bypass.
+
+### Features
+
+- **Lazy MT5 Import**: MT5 package only imported when MT5 mode is active
+- **Account Verification**: Server + login mismatch detection
+- **Non-Demo Rejection**: Refuses live accounts with `NOT_DEMO` state
+- **Symbol Mapping**: JSON dict maps AshtradingAI symbols to MT5 broker symbols
+- **Magic Number**: Unique identifier for AshtradingAI orders (default: 20260904)
+- **Volume Validation**: Min/max volume, tick size enforcement
+- **Order Pipeline**: `order_check()` → `order_send()` → verification
+- **Duplicate Protection**: Same-signal-same-candle deduplication via timestamp
+
+### Configuration
+
+```env
+# MT5 Demo settings
+MT5_ENABLED=false              # Enable MT5 adapter
+MT5_DEMO_ONLY=true             # Refuse live accounts
+MT5_DEMO_TRADING_ENABLED=false # Enable order execution
+
+# MT5 terminal connection
+MT5_PATH=                      # Path to MT5 terminal
+MT5_LOGIN=                     # Demo account number
+MT5_PASSWORD=                  # Demo account password
+MT5_SERVER=                    # Demo broker server name
+MT5_TIMEOUT=10000              # Connection timeout (ms)
+
+# Account verification
+MT5_EXPECTED_SERVER=           # Verify server on connect
+MT5_EXPECTED_LOGIN=            # Verify account number
+
+# Order settings
+MT5_MAGIC_NUMBER=20260904      # Unique EA identifier
+MT5_SYMBOL_MAP={}              # {"BTC/USDT": "BTCUSD."}
+```
+
+### Testing
+
+```bash
+python -m pytest tests/test_mt5.py -v  # 50 MT5-specific tests
+```
+
+Mock MT5 connection, market data, and broker available for offline testing.
+
 ## Testing
 
 ```bash
-# 163 unit tests (107 original + 56 resilience)
+# 276 unit tests (226 original + 50 MT5)
 python -m pytest tests/ -v
+
+# 50 MT5-specific tests
+python -m pytest tests/test_mt5.py -v
 
 # 12-test smoke test
 python scripts/smoke_test.py

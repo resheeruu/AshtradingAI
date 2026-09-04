@@ -208,6 +208,40 @@ class Database:
 
             CREATE INDEX IF NOT EXISTS idx_paper_sessions_status ON paper_sessions(status);
             CREATE INDEX IF NOT EXISTS idx_paper_sessions_exchange ON paper_sessions(exchange);
+
+            CREATE TABLE IF NOT EXISTS mt5_orders (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                mt5_symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                volume REAL NOT NULL,
+                price REAL NOT NULL,
+                mt5_ticket INTEGER,
+                mt5_deal INTEGER,
+                mt5_retcode INTEGER,
+                magic INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending',
+                candle_timestamp TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS mt5_signals (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                signal_key TEXT NOT NULL UNIQUE,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                candle_timestamp TEXT NOT NULL,
+                order_id TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mt5_orders_session ON mt5_orders(session_id);
+            CREATE INDEX IF NOT EXISTS idx_mt5_orders_symbol ON mt5_orders(symbol);
+            CREATE INDEX IF NOT EXISTS idx_mt5_orders_ticket ON mt5_orders(mt5_ticket);
+            CREATE INDEX IF NOT EXISTS idx_mt5_signals_session ON mt5_signals(session_id);
+            CREATE INDEX IF NOT EXISTS idx_mt5_signals_key ON mt5_signals(signal_key);
         """)
         conn.commit()
         # Migrate existing tables to add new columns if missing
@@ -646,5 +680,147 @@ class Database:
         rows = conn.execute(
             "SELECT * FROM paper_sessions ORDER BY created_at DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── MT5 Order Persistence ─────────────────────────────────────────
+
+    def log_mt5_order(
+        self,
+        session_id: str,
+        symbol: str,
+        mt5_symbol: str,
+        side: str,
+        volume: float,
+        price: float,
+        mt5_ticket: int = 0,
+        mt5_deal: int = 0,
+        mt5_retcode: int = 0,
+        magic: int = 0,
+        status: str = "pending",
+        candle_timestamp: str = "",
+    ) -> str:
+        """Persist an MT5 order for reconciliation after restart."""
+        order_id = str(uuid.uuid4())[:12]
+        ts = datetime.now(timezone.utc).isoformat()
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO mt5_orders
+               (id, session_id, symbol, mt5_symbol, side, volume, price,
+                mt5_ticket, mt5_deal, mt5_retcode, magic, status,
+                candle_timestamp, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (order_id, session_id, symbol, mt5_symbol, side, volume, price,
+             mt5_ticket, mt5_deal, mt5_retcode, magic, status,
+             candle_timestamp, ts),
+        )
+        conn.commit()
+        return order_id
+
+    def update_mt5_order(
+        self,
+        order_id: str,
+        status: Optional[str] = None,
+        mt5_ticket: Optional[int] = None,
+        mt5_deal: Optional[int] = None,
+        mt5_retcode: Optional[int] = None,
+    ) -> None:
+        """Update MT5 order status after reconciliation."""
+        conn = self._get_conn()
+        updates = []
+        params: List = []
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+        if mt5_ticket is not None:
+            updates.append("mt5_ticket = ?")
+            params.append(mt5_ticket)
+        if mt5_deal is not None:
+            updates.append("mt5_deal = ?")
+            params.append(mt5_deal)
+        if mt5_retcode is not None:
+            updates.append("mt5_retcode = ?")
+            params.append(mt5_retcode)
+        if not updates:
+            return
+        params.append(order_id)
+        conn.execute(
+            f"UPDATE mt5_orders SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+
+    def get_mt5_orders_by_session(self, session_id: str) -> List[Dict]:
+        """Get all MT5 orders for a session (for reconciliation)."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM mt5_orders WHERE session_id = ? ORDER BY created_at",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_mt5_orders_by_ticket(self, mt5_ticket: int) -> List[Dict]:
+        """Get MT5 orders by position ticket."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM mt5_orders WHERE mt5_ticket = ?",
+            (mt5_ticket,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_pending_mt5_orders(self, session_id: str) -> List[Dict]:
+        """Get orders with unknown final status (for reconciliation)."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM mt5_orders WHERE session_id = ? AND status = 'pending'",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── MT5 Signal Persistence ────────────────────────────────────────
+
+    def log_mt5_signal(
+        self,
+        session_id: str,
+        signal_key: str,
+        symbol: str,
+        side: str,
+        candle_timestamp: str,
+        order_id: str = "",
+    ) -> str:
+        """Persist a signal key for duplicate protection across restarts."""
+        rec_id = str(uuid.uuid4())[:12]
+        ts = datetime.now(timezone.utc).isoformat()
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                """INSERT INTO mt5_signals
+                   (id, session_id, signal_key, symbol, side,
+                    candle_timestamp, order_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rec_id, session_id, signal_key, symbol, side,
+                 candle_timestamp, order_id, ts),
+            )
+            conn.commit()
+            return rec_id
+        except Exception:
+            # Duplicate signal_key — already recorded
+            return ""
+
+    def is_mt5_signal_recorded(self, session_id: str, signal_key: str) -> bool:
+        """Check if a signal was already executed (duplicate protection)."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT 1 FROM mt5_signals WHERE session_id = ? AND signal_key = ?",
+            (session_id, signal_key),
+        ).fetchone()
+        return row is not None
+
+    def get_mt5_signals_by_session(self, session_id: str) -> List[Dict]:
+        """Get all recorded signals for a session."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM mt5_signals WHERE session_id = ? ORDER BY created_at",
+            (session_id,),
         ).fetchall()
         return [dict(r) for r in rows]
