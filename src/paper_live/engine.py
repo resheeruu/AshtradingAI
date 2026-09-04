@@ -13,7 +13,8 @@ from src.ai.health import ProviderHealthManager
 from src.config import Config
 from src.market.data import MarketData
 from src.market.health import MarketHealth, MarketState
-from src.market.scheduler import CandleScheduler
+from src.market.scheduler import CandleScheduler, is_candle_completed, parse_candle_timestamp
+from src.market.validation import validate_candles
 from src.portfolio.portfolio import Portfolio
 from src.risk.manager import RiskManager
 from src.trading.paper.broker import PaperBroker
@@ -22,7 +23,47 @@ from src.indicators.technical import compute_all_indicators
 
 logger = logging.getLogger(__name__)
 
-SOFTWARE_VERSION = "0.5.0"
+SOFTWARE_VERSION = "0.5.2"
+
+
+def _get_latest_completed_candle(candles: List[Dict], timeframe: str) -> Optional[Dict]:
+    """Return the newest completed candle from a list of candles (newest last).
+
+    Iterates from the end to find the first candle whose timestamp indicates
+    it has fully closed. Returns None if no completed candle is found.
+    """
+    for candle in reversed(candles):
+        ts = candle.get("timestamp", "")
+        if ts and is_candle_completed(ts, timeframe):
+            return candle
+    return None
+
+
+def _find_unprocessed_completed_candles(
+    candles: List[Dict], timeframe: str, last_processed_ts: Optional[str]
+) -> List[Dict]:
+    """Find all completed candles that have not been processed yet.
+
+    Returns completed candles in chronological order (oldest first).
+    If last_processed_ts is None, returns only the latest completed candle.
+    If last_processed_ts is set, returns all completed candles after it
+    (or the latest completed candle if it is newer than last_processed_ts).
+    """
+    completed = [c for c in candles if is_candle_completed(c["timestamp"], timeframe)]
+    if not completed:
+        return []
+
+    if last_processed_ts is None:
+        # No prior state: return only the latest completed candle
+        return [completed[-1]]
+
+    # Find all completed candles strictly after last_processed_ts
+    missed = [c for c in completed if c["timestamp"] > last_processed_ts]
+    if missed:
+        return missed
+
+    # last_processed_ts is already the latest; nothing to process
+    return []
 
 
 class PaperLiveEngine:
@@ -48,6 +89,7 @@ class PaperLiveEngine:
         max_stale_seconds: int = 300,
         retry_seconds: int = 30,
         heartbeat_seconds: int = 300,
+        candle_limit: int = 0,
     ):
         self.session_id = session_id
         self.ai = ai
@@ -61,6 +103,7 @@ class PaperLiveEngine:
         self.slippage = slippage
         self.retry_seconds = retry_seconds
         self.heartbeat_seconds = heartbeat_seconds
+        self.candle_limit = candle_limit or Config.CANDLE_LIMIT
 
         self.market_data = MarketData(exchange_id=exchange)
         self.market_health = MarketHealth(max_stale_seconds=max_stale_seconds)
@@ -88,7 +131,8 @@ class PaperLiveEngine:
         self._trades_count = 0
         self._decisions_count = 0
         self._last_heartbeat: float = 0
-        self._indicator_cache: Dict[str, dict] = {}
+        # Rolling candle history per symbol for indicator computation
+        self._candle_history: Dict[str, List[Dict]] = {}
 
     def start(self) -> None:
         self._running = True
@@ -99,7 +143,19 @@ class PaperLiveEngine:
     def stop(self) -> None:
         self._running = False
         self._save_state()
+        self._mark_session_stopped()
         self._print_shutdown()
+
+    def _mark_session_stopped(self) -> None:
+        """Mark the session as stopped (not closed) on graceful shutdown."""
+        if self.database:
+            try:
+                self.database.update_paper_session(
+                    session_id=self.session_id,
+                    status="stopped",
+                )
+            except Exception as e:
+                logger.warning("Could not mark session stopped: %s", e)
 
     def _print_banner(self) -> None:
         print("=" * 40)
@@ -113,6 +169,7 @@ class PaperLiveEngine:
         print(f"  Symbols:          {', '.join(self.symbols)}")
         print(f"  Timeframe:        {self.timeframe}")
         print(f"  Balance:          ${self.starting_balance:,.2f}")
+        print(f"  Candle History:   {self.candle_limit}")
         print("=" * 40)
 
     def _print_shutdown(self) -> None:
@@ -159,28 +216,70 @@ class PaperLiveEngine:
     def _process_symbol(self, symbol: str) -> None:
         scheduler = self.schedulers[symbol]
         try:
-            candles = self.market_data.fetch_candles(symbol, self.timeframe, limit=2)
+            # Fetch enough history for indicator computation
+            candles = self.market_data.fetch_candles(symbol, self.timeframe, limit=self.candle_limit)
             if not candles:
                 self.market_health.record_unavailable(symbol, "No candles returned")
                 logger.warning("MARKET_DATA_UNAVAILABLE: %s", symbol)
                 return
 
-            last_candle = candles[-1]
-            candle_ts = last_candle["timestamp"]
+            # Validate fetched candles
+            valid_candles, validation_errors = validate_candles(candles)
+            if not valid_candles:
+                self.market_health.record_invalid_data(symbol, f"All candles invalid: {len(validation_errors)} errors")
+                logger.warning("MARKET_INVALID_DATA: %s — %d invalid candles", symbol, len(validation_errors))
+                return
+            if validation_errors:
+                logger.info("Candle validation for %s: %d valid, %d rejected", symbol, len(valid_candles), len(validation_errors))
 
-            if scheduler.has_processed(candle_ts):
+            # Update rolling candle history
+            self._candle_history[symbol] = valid_candles
+
+            # Check for stale data — do not process if data is too old
+            if self.market_health.is_stale(symbol):
+                logger.warning("Market data stale for %s, skipping processing", symbol)
                 return
 
-            if not scheduler.should_process(candle_ts):
+            # Find all unprocessed completed candles (handles missed candles)
+            unprocessed = _find_unprocessed_completed_candles(
+                valid_candles, self.timeframe, scheduler.last_processed_candle
+            )
+            if not unprocessed:
+                logger.debug("No new completed candles for %s", symbol)
                 return
 
-            self.market_health.record_success(symbol, candle_ts)
+            # Process each unprocessed candle sequentially; stop at first failure
+            for completed in unprocessed:
+                if not self._running:
+                    break
 
-            self._update_indicators(symbol, candles)
-            decision = self._get_ai_decision(symbol, last_candle, candles)
-            self._execute_decision(symbol, decision, last_candle)
-            scheduler.mark_processed(candle_ts)
-            self._save_state()
+                candle_ts = completed["timestamp"]
+
+                # Should this candle be processed?
+                if not scheduler.should_process(candle_ts):
+                    continue
+
+                self.market_health.record_success(symbol, candle_ts)
+
+                # Build indicator context using only candles up to and including the completed candle
+                completed_idx = None
+                for i, c in enumerate(valid_candles):
+                    if c["timestamp"] == candle_ts:
+                        completed_idx = i
+                        break
+
+                if completed_idx is None:
+                    logger.warning("Could not find completed candle index for %s ts=%s", symbol, candle_ts)
+                    continue
+
+                # Strict no-lookahead: only candles[:i+1] visible to AI
+                visible_candles = valid_candles[:completed_idx + 1]
+                indicators = self._compute_indicators(symbol, visible_candles)
+
+                decision = self._get_ai_decision(symbol, completed, visible_candles, indicators)
+                self._execute_decision(symbol, decision, completed)
+                scheduler.mark_processed(candle_ts)
+                self._save_state()
 
         except Exception as e:
             err_str = str(e)
@@ -192,17 +291,18 @@ class PaperLiveEngine:
                 self.market_health.record_network_error(symbol, err_str)
             logger.error("Error processing %s: %s", symbol, e)
 
-    def _update_indicators(self, symbol: str, candles: List[Dict]) -> None:
+    def _compute_indicators(self, symbol: str, candles: List[Dict]) -> dict:
+        """Compute indicators from visible candles only (no lookahead)."""
         if len(candles) >= 50:
-            self._indicator_cache[symbol] = compute_all_indicators(candles)
+            return compute_all_indicators(candles)
+        return {}
 
-    def _get_ai_decision(self, symbol: str, candle: Dict, all_candles: List[Dict]) -> Dict:
-        indicators = self._indicator_cache.get(symbol, {})
+    def _get_ai_decision(self, symbol: str, candle: Dict, visible_candles: List[Dict], indicators: dict) -> Dict:
         ctx = MarketContext(
             symbol=symbol,
             timeframe=self.timeframe,
             current_price=candle["close"],
-            candles=all_candles,
+            candles=visible_candles,
             indicators=indicators,
             portfolio_balance=self.portfolio.balance,
             open_positions=list(self.portfolio.positions.keys()),
@@ -262,6 +362,11 @@ class PaperLiveEngine:
                     logger.warning("Could not log trade: %s", e)
 
     def _get_sleep_time(self) -> float:
+        """Return seconds to sleep before next processing cycle.
+
+        Uses the minimum wait across all symbols. Falls back to retry_seconds
+        if no scheduler has state yet. Caps at 60s to stay responsive.
+        """
         min_wait = float("inf")
         for sym in self.symbols:
             scheduler = self.schedulers[sym]
@@ -269,7 +374,7 @@ class PaperLiveEngine:
             if wait < min_wait:
                 min_wait = wait
         if min_wait == float("inf"):
-            return 60.0
+            return max(1.0, min(self.retry_seconds, 60))
         return max(1.0, min(min_wait, 60))
 
     def _save_state(self) -> None:
@@ -287,17 +392,17 @@ class PaperLiveEngine:
                   "fee": t.fee, "entry_time": t.entry_time, "exit_time": t.exit_time}
                  for t in self.portfolio.trade_history]
             )
-            last_candle = None
+            # Per-symbol last processed candle state
+            per_symbol_state = {}
             for sym in self.symbols:
                 ts = self.schedulers[sym].last_processed_candle
                 if ts:
-                    last_candle = ts
-                    break
+                    per_symbol_state[sym] = ts
 
             self.database.update_paper_session(
                 session_id=self.session_id,
                 current_balance=self.portfolio.balance,
-                last_processed_candle=last_candle,
+                last_processed_candle=json.dumps(per_symbol_state),
                 open_positions_json=positions_json,
                 trade_history_json=trades_json,
             )
@@ -309,6 +414,11 @@ class PaperLiveEngine:
             return False
         session = self.database.get_paper_session(self.session_id)
         if not session:
+            return False
+        # Only recover from active or stopped sessions (not closed/errored)
+        status = session.get("status", "active")
+        if status == "closed":
+            logger.warning("Session %s is closed, cannot recover", self.session_id)
             return False
         try:
             self.portfolio.balance = session.get("current_balance", self.starting_balance)
@@ -342,10 +452,25 @@ class PaperLiveEngine:
                     exit_time=t.get("exit_time"),
                 ))
 
-            last_candle = session.get("last_processed_candle")
-            if last_candle:
-                for sym in self.symbols:
-                    self.schedulers[sym].set_last_processed(last_candle)
+            # Recover per-symbol last processed candle state
+            last_candle_raw = session.get("last_processed_candle")
+            if last_candle_raw:
+                try:
+                    per_symbol_state = json.loads(last_candle_raw)
+                    if isinstance(per_symbol_state, dict):
+                        # New format: per-symbol dict
+                        for sym, ts in per_symbol_state.items():
+                            if sym in self.schedulers and ts:
+                                self.schedulers[sym].set_last_processed(ts)
+                    elif isinstance(per_symbol_state, str) and per_symbol_state:
+                        # Legacy format: single timestamp string applied to all symbols
+                        for sym in self.symbols:
+                            self.schedulers[sym].set_last_processed(per_symbol_state)
+                except (json.JSONDecodeError, TypeError):
+                    # Legacy format: raw timestamp string (not JSON)
+                    if last_candle_raw:
+                        for sym in self.symbols:
+                            self.schedulers[sym].set_last_processed(last_candle_raw)
 
             logger.info("Recovered paper session %s: balance=%.2f, positions=%d, trades=%d",
                         self.session_id, self.portfolio.balance,
@@ -379,6 +504,13 @@ class PaperLiveEngine:
         elif any(v == "RATE_LIMITED" for v in market_states.values()):
             overall_market = "RATE_LIMITED"
 
+        # Per-symbol last processed candle
+        per_symbol_last = {}
+        for sym in self.symbols:
+            ts = self.schedulers[sym].last_processed_candle
+            if ts:
+                per_symbol_last[sym] = ts
+
         return {
             "session_id": self.session_id,
             "exchange": self.exchange,
@@ -394,10 +526,7 @@ class PaperLiveEngine:
                           for sym, p in self.portfolio.positions.items()},
             "trades_count": self._trades_count,
             "decisions_count": self._decisions_count,
-            "last_processed_candle": next(
-                (self.schedulers[s].last_processed_candle for s in self.symbols
-                 if self.schedulers[s].last_processed_candle), None
-            ),
+            "last_processed_candle": per_symbol_last,
             "ai_provider": self.ai.ai_id,
             "ai_model": self.ai.model,
             "risk_kill_switch": self.risk_manager._kill_switch,

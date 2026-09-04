@@ -5,6 +5,7 @@ import logging
 import sys
 import uuid
 from pathlib import Path
+from typing import Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -65,6 +66,21 @@ def _fetch_live_data(exchange: str, symbols: list, timeframe: str, limit: int) -
         else:
             logger.warning("No data for %s, using synthetic fallback", sym)
             data[sym] = generate_synthetic_candles(symbol=sym, periods=limit)
+    return data
+
+
+def _fetch_live_data_strict(exchange: str, symbols: list, timeframe: str, limit: int) -> dict:
+    """Fetch live market data — NO synthetic fallback. Returns empty dict on failure."""
+    md = MarketData(exchange_id=exchange)
+    data = {}
+    for sym in symbols:
+        logger.info("Fetching %s candles for %s...", limit, sym)
+        candles = md.fetch_candles(sym, timeframe, limit)
+        if candles:
+            data[sym] = candles
+            logger.info("Got %d candles for %s", len(candles), sym)
+        else:
+            logger.error("NO DATA for %s — refusing synthetic fallback in paper-live", sym)
     return data
 
 
@@ -579,7 +595,7 @@ def cmd_paper_live(args):
                 exchange=Config.EXCHANGE,
                 symbols=",".join(Config.SYMBOLS),
                 timeframe=Config.TIMEFRAME,
-                data_source=Config.DATA_SOURCE,
+                data_source="live",
                 starting_balance=Config.STARTING_BALANCE,
                 config_json=json.dumps(Config.as_dict()),
                 software_version=SOFTWARE_VERSION,
@@ -610,6 +626,7 @@ def cmd_paper_live(args):
         max_stale_seconds=Config.MARKET_MAX_STALE_SECONDS,
         retry_seconds=Config.MARKET_RETRY_SECONDS,
         heartbeat_seconds=Config.PAPER_HEARTBEAT_SECONDS,
+        candle_limit=Config.CANDLE_LIMIT,
     )
 
     if Config.PAPER_AUTO_RESUME:
@@ -622,7 +639,7 @@ def cmd_paper_live(args):
 
 
 def cmd_paper_live_test(args):
-    """Deterministic paper-live test without real API or network."""
+    """Deterministic paper-live test using the real PaperLiveEngine with mocked market data."""
     if Config.LIVE_TRADING:
         logger.critical("LIVE_TRADING is enabled. Paper-live-test refuses to start.")
         sys.exit(1)
@@ -630,7 +647,8 @@ def cmd_paper_live_test(args):
     print("=" * 40)
     print("  ASHTRADINGAI PAPER-LIVE-TEST MODE")
     print("=" * 40)
-    print("  Simulating: market -> scheduler -> AI -> risk -> execution -> SQLite -> restart")
+    print("  Testing REAL PaperLiveEngine with synthetic data")
+    print("  Phases: market -> scheduler -> AI -> risk -> execution -> SQLite -> restart")
     print("=" * 40)
 
     session_id = "test-" + str(uuid.uuid4())[:8]
@@ -654,179 +672,125 @@ def cmd_paper_live_test(args):
             software_version=SOFTWARE_VERSION,
         )
 
-    from src.portfolio.portfolio import Portfolio
-    from src.risk.manager import RiskManager
-    from src.trading.paper.broker import PaperBroker
-    from src.market.candles import generate_synthetic_candles
+    # Generate deterministic synthetic candles for all symbols
+    print("\n--- Phase 1: Generate synthetic market data ---")
+    synthetic_data: Dict[str, List[Dict]] = {}
+    for sym in Config.SYMBOLS:
+        candles = generate_synthetic_candles(symbol=sym, periods=100)
+        synthetic_data[sym] = candles
+        print(f"  {sym}: {len(candles)} candles generated")
 
-    portfolio = Portfolio(ai_id="test-strategy", starting_balance=Config.STARTING_BALANCE)
-    risk_manager = RiskManager(
+    # Create a mock MarketData that returns our synthetic data
+    from unittest.mock import MagicMock
+    mock_market_data = MagicMock()
+    mock_market_data.fetch_candles = MagicMock(side_effect=lambda sym, tf, limit=500: synthetic_data.get(sym, []))
+
+    print("\n--- Phase 2: Run PaperLiveEngine with mock market data ---")
+    engine = PaperLiveEngine(
+        session_id=session_id,
+        ai=ai,
+        database=db,
+        health_manager=None,
+        exchange=Config.EXCHANGE,
+        symbols=Config.SYMBOLS,
+        timeframe=Config.TIMEFRAME,
+        starting_balance=Config.STARTING_BALANCE,
+        fee=Config.TRADING_FEE,
+        slippage=Config.SLIPPAGE,
         max_position_size=Config.MAX_POSITION_SIZE,
         max_open_positions=Config.MAX_OPEN_POSITIONS,
         max_daily_loss=Config.MAX_DAILY_LOSS,
         max_drawdown=Config.MAX_DRAWDOWN,
         min_confidence=Config.MIN_AI_CONFIDENCE,
+        max_stale_seconds=Config.MARKET_MAX_STALE_SECONDS,
+        retry_seconds=Config.MARKET_RETRY_SECONDS,
+        heartbeat_seconds=Config.PAPER_HEARTBEAT_SECONDS,
+        candle_limit=Config.CANDLE_LIMIT,
     )
-    broker = PaperBroker(fee=Config.TRADING_FEE, slippage=Config.SLIPPAGE)
+    # Inject mock market data
+    engine.market_data = mock_market_data
 
-    print("\n--- Phase 1: Synthetic market data ---")
-    data = {}
+    engine.start()
+    # Process each symbol once through the real engine
     for sym in Config.SYMBOLS:
-        candles = generate_synthetic_candles(symbol=sym, periods=100)
-        data[sym] = candles
-        print(f"  {sym}: {len(candles)} candles generated")
-
-    print("\n--- Phase 2: Process candles through AI + risk + execution ---")
-    from src.indicators.technical import compute_all_indicators
-    from src.ai.base import MarketContext
-
-    trades_count = 0
-    for sym, candles in data.items():
-        indicators = compute_all_indicators(candles) if len(candles) >= 50 else {}
-        for i, candle in enumerate(candles[20:], start=20):
-            ctx = MarketContext(
-                symbol=sym,
-                timeframe=Config.TIMEFRAME,
-                current_price=candle["close"],
-                candles=candles[:i+1],
-                indicators={k: v[:i+1] if v else [] for k, v in indicators.items()},
-                portfolio_balance=portfolio.balance,
-                open_positions=list(portfolio.positions.keys()),
-                timestamp=candle["timestamp"],
-            )
-            decision = ai.decide(ctx)
-            decision_str = decision.get("decision", "HOLD")
-
-            pos = portfolio.get_position(sym)
-            if decision_str == "SELL" and pos is None:
-                continue
-            if decision_str == "BUY" and pos is not None:
-                continue
-
-            risk = risk_manager.evaluate(
-                portfolio=portfolio,
-                decision=decision_str,
-                symbol=sym,
-                price=candle["close"],
-                confidence=decision.get("confidence", 0.0),
-                requested_size=decision.get("suggested_position_size"),
-            )
-            if not risk.allowed:
-                continue
-
-            qty = risk.adjusted_size or decision.get("suggested_position_size")
-            if qty is None or qty <= 0:
-                continue
-
-            if decision_str == "BUY":
-                result = broker.execute_buy(portfolio, sym, candle["close"], qty,
-                                            timestamp=candle["timestamp"])
-            elif decision_str == "SELL":
-                result = broker.execute_sell(portfolio, sym, candle["close"],
-                                             timestamp=candle["timestamp"])
-            else:
-                result = None
-
-            if result:
-                trades_count += 1
-                if db:
-                    db.log_trade(
-                        ai_id="test-strategy",
-                        symbol=sym,
-                        side=result["side"],
-                        entry_price=result["price"],
-                        exit_price=None,
-                        quantity=result["quantity"],
-                        fee=result["fee"],
-                        slippage=result["slippage"],
-                        pnl=None,
-                        balance=portfolio.balance,
-                        experiment_id=session_id,
-                    )
-
-    print(f"  Trades executed: {trades_count}")
-    print(f"  Final balance: ${portfolio.balance:,.2f}")
-    print(f"  Open positions: {len(portfolio.positions)}")
+        engine._process_symbol(sym)
+    trades_before = engine._trades_count
+    balance_before = engine.portfolio.balance
+    positions_before = dict(engine.portfolio.positions)
+    print(f"  Trades executed: {trades_before}")
+    print(f"  Balance: ${engine.portfolio.balance:,.2f}")
+    print(f"  Open positions: {len(engine.portfolio.positions)}")
 
     print("\n--- Phase 3: Persist state to SQLite ---")
+    engine._save_state()
     if db:
-        positions_json = json.dumps(
-            {sym: {"side": p.side, "entry_price": p.entry_price,
-                    "quantity": p.quantity, "entry_time": p.entry_time}
-             for sym, p in portfolio.positions.items()}
-        )
-        trades_json = json.dumps(
-            [{"symbol": t.symbol, "side": t.side, "entry_price": t.entry_price,
-              "exit_price": t.exit_price, "quantity": t.quantity, "pnl": t.pnl,
-              "fee": t.fee, "entry_time": t.entry_time, "exit_time": t.exit_time}
-             for t in portfolio.trade_history]
-        )
-        db.update_paper_session(
-            session_id=session_id,
-            current_balance=portfolio.balance,
-            last_processed_candle=candles[-1]["timestamp"] if candles else None,
-            open_positions_json=positions_json,
-            trade_history_json=trades_json,
-        )
+        session = db.get_paper_session(session_id)
+        assert session is not None, "Session not found after save"
         print(f"  Session {session_id} saved to SQLite")
 
     print("\n--- Phase 4: Simulate restart recovery ---")
-    if db:
-        recovered_portfolio = Portfolio(ai_id="test-strategy-recovered", starting_balance=Config.STARTING_BALANCE)
-        session = db.get_paper_session(session_id)
-        if session:
-            recovered_portfolio.balance = session.get("current_balance", Config.STARTING_BALANCE)
-            pos_json = session.get("open_positions_json", "{}")
-            positions = json.loads(pos_json) if pos_json else {}
-            for sym, pdata in positions.items():
-                from src.portfolio.portfolio import Position
-                recovered_portfolio.positions[sym] = Position(
-                    symbol=sym,
-                    side=pdata["side"],
-                    entry_price=pdata["entry_price"],
-                    quantity=pdata["quantity"],
-                    entry_time=pdata.get("entry_time"),
-                )
-            trades_list = json.loads(session.get("trade_history_json", "[]"))
-            for t in trades_list:
-                from src.portfolio.portfolio import TradeRecord
-                recovered_portfolio.trade_history.append(TradeRecord(
-                    symbol=t["symbol"],
-                    side=t["side"],
-                    entry_price=t["entry_price"],
-                    exit_price=t.get("exit_price", 0.0),
-                    quantity=t["quantity"],
-                    fee=t.get("fee", 0.0),
-                    slippage=t.get("slippage", 0.0),
-                    pnl=t.get("pnl", 0.0),
-                    entry_time=t.get("entry_time"),
-                    exit_time=t.get("exit_time"),
-                ))
+    # Create a new engine instance (simulates restart)
+    recovered_ai = TestStrategy(ai_id="test-strategy")
+    recovered_engine = PaperLiveEngine(
+        session_id=session_id,
+        ai=recovered_ai,
+        database=db,
+        health_manager=None,
+        exchange=Config.EXCHANGE,
+        symbols=Config.SYMBOLS,
+        timeframe=Config.TIMEFRAME,
+        starting_balance=Config.STARTING_BALANCE,
+        fee=Config.TRADING_FEE,
+        slippage=Config.SLIPPAGE,
+        max_position_size=Config.MAX_POSITION_SIZE,
+        max_open_positions=Config.MAX_OPEN_POSITIONS,
+        max_daily_loss=Config.MAX_DAILY_LOSS,
+        max_drawdown=Config.MAX_DRAWDOWN,
+        min_confidence=Config.MIN_AI_CONFIDENCE,
+        max_stale_seconds=Config.MARKET_MAX_STALE_SECONDS,
+        retry_seconds=Config.MARKET_RETRY_SECONDS,
+        heartbeat_seconds=Config.PAPER_HEARTBEAT_SECONDS,
+        candle_limit=Config.CANDLE_LIMIT,
+    )
+    recovered_engine.market_data = mock_market_data
 
-            balance_match = abs(recovered_portfolio.balance - portfolio.balance) < 0.01
-            positions_match = len(recovered_portfolio.positions) == len(portfolio.positions)
-            trades_match = len(recovered_portfolio.trade_history) == len(portfolio.trade_history)
+    # Recover state from database
+    recovered = recovered_engine.recover_from_db()
+    assert recovered, "Recovery failed"
 
-            print(f"  Balance recovered: ${recovered_portfolio.balance:,.2f} (match: {balance_match})")
-            print(f"  Positions recovered: {len(recovered_portfolio.positions)} (match: {positions_match})")
-            print(f"  Trades recovered: {len(recovered_portfolio.trade_history)} (match: {trades_match})")
+    balance_match = abs(recovered_engine.portfolio.balance - balance_before) < 0.01
+    positions_match = len(recovered_engine.portfolio.positions) == len(positions_before)
+    trades_match = len(recovered_engine.portfolio.trade_history) == len(engine.portfolio.trade_history)
 
-            if balance_match and positions_match and trades_match:
-                print("\n  RESTART RECOVERY: PASS")
-            else:
-                print("\n  RESTART RECOVERY: FAIL")
-                sys.exit(1)
-        else:
-            print("  ERROR: Session not found after save")
-            sys.exit(1)
+    # Verify per-symbol state recovery
+    for sym in Config.SYMBOLS:
+        orig_ts = engine.schedulers[sym].last_processed_candle
+        rec_ts = recovered_engine.schedulers[sym].last_processed_candle
+        if orig_ts and rec_ts:
+            assert orig_ts == rec_ts, f"Per-symbol state mismatch for {sym}: {orig_ts} != {rec_ts}"
+
+    print(f"  Balance recovered: ${recovered_engine.portfolio.balance:,.2f} (match: {balance_match})")
+    print(f"  Positions recovered: {len(recovered_engine.portfolio.positions)} (match: {positions_match})")
+    print(f"  Trades recovered: {len(recovered_engine.portfolio.trade_history)} (match: {trades_match})")
+
+    # Verify no duplicate processing after restart
+    recovered_engine._process_symbol(Config.SYMBOLS[0])
+    assert recovered_engine._trades_count == 0, "Recovered engine should not reprocess candles"
 
     print("\n--- Phase 5: Verify safety ---")
     print(f"  LIVE_TRADING: {Config.LIVE_TRADING}")
     print(f"  Real orders: DISABLED")
-    print(f"  Synthetic fallback: NOT USED (data was synthetic by design)")
+    print(f"  Synthetic fallback: NOT USED in engine (data was provided by test)")
     safety_ok = not Config.LIVE_TRADING
     print(f"\n  SAFETY CHECK: {'PASS' if safety_ok else 'FAIL'}")
 
+    if balance_match and positions_match and trades_match and safety_ok:
+        print("\n  ALL PHASES: PASS")
+    else:
+        print("\n  SOME PHASES: FAIL")
+        sys.exit(1)
+
+    engine.stop()
     if db:
         db.close()
 
@@ -835,170 +799,34 @@ def cmd_paper_live_test(args):
     print("=" * 40)
 
 
-def cmd_status(args):
-    """Show current configuration and provider health."""
-    print("\n=== ASHTRADINGAI STATUS ===")
-    print(f"LIVE TRADING: {Config.LIVE_TRADING}")
-    print(f"MODE:         PAPER-LIVE")
-    print(f"Environment:  {Config.APP_ENV}")
-    print(f"Exchange:     {Config.EXCHANGE}")
-    print(f"Symbols:      {Config.SYMBOLS}")
-    print(f"Timeframe:    {Config.TIMEFRAME}")
-    print(f"Candle Limit: {Config.CANDLE_LIMIT}")
-    print(f"Balance:      ${Config.STARTING_BALANCE:,.2f}")
-    print(f"Fee:          {Config.TRADING_FEE:.4f}")
-    print(f"Slippage:     {Config.SLIPPAGE:.5f}")
-    print(f"Data Source:  {Config.DATA_SOURCE}")
-    print(f"AI Provider:  {Config.AI_PROVIDER or '(none - using test strategy)'}")
-    if Config.AI_PARTICIPANTS:
-        print(f"Participants: {Config.AI_PARTICIPANTS}")
-    if Config.AI_BASE_URL:
-        print(f"AI Base URL:  {Config.AI_BASE_URL}")
-
-    # Market health
-    print(f"\n--- Market Health ---")
-    print(f"  Max Stale:   {Config.MARKET_MAX_STALE_SECONDS}s")
-    print(f"  Retry:       {Config.MARKET_RETRY_SECONDS}s")
-
-    # Paper-live configuration
-    print(f"\n--- Paper-Live ---")
-    print(f"  Session ID:     {Config.PAPER_SESSION_ID or '(auto)'}")
-    print(f"  Auto Resume:    {Config.PAPER_AUTO_RESUME}")
-    print(f"  Heartbeat:      {Config.PAPER_HEARTBEAT_SECONDS}s")
-
-    # Resilience configuration
-    print(f"\n--- Resilience ---")
-    print(f"Failover:     {'enabled' if Config.AI_FAILOVER_ENABLED else 'disabled'}")
-    print(f"Cache:        {'enabled' if Config.AI_CACHE_ENABLED else 'disabled'} (max: {Config.AI_CACHE_MAX_SIZE}, ttl: {Config.AI_CACHE_TTL_SECONDS}s)")
-    print(f"Cooldown:     {Config.AI_COOLDOWN_SECONDS}s (max: {Config.AI_MAX_COOLDOWN_SECONDS}s, failures: {Config.AI_MAX_FAILURES_BEFORE_COOLDOWN})")
-    if Config.AI_DAILY_TOKEN_LIMIT > 0:
-        print(f"Daily Tokens: {Config.AI_DAILY_TOKEN_LIMIT:,}")
-    if Config.AI_DAILY_REQUEST_LIMIT > 0:
-        print(f"Daily Reqs:   {Config.AI_DAILY_REQUEST_LIMIT:,}")
-    if Config.AI_FALLBACK_PROVIDER:
-        print(f"Fallback:     {Config.AI_FALLBACK_PROVIDER}/{Config.AI_FALLBACK_MODEL}")
-
-    # Show provider health from database
-    db = None
-    try:
-        db = _get_database()
-        health_summary = db.get_provider_health_summary()
-        if health_summary:
-            print(f"\n--- Provider Health ---")
-            for h in health_summary:
-                state = h.get("state", "UNKNOWN")
-                provider = h.get("provider", "unknown")
-                model = h.get("model", "unknown")
-                failures = h.get("failure_count", 0)
-                successes = h.get("success_count", 0)
-                last_error = h.get("last_error", "")
-                print(f"  {provider}/{model}: {state} (F:{failures} S:{successes})")
-                if last_error:
-                    print(f"    Last error: {last_error[:80]}")
-
-        usage_summary = db.get_provider_usage_summary()
-        if usage_summary:
-            print(f"\n--- Provider Usage ---")
-            for u in usage_summary:
-                provider = u.get("provider", "unknown")
-                model = u.get("model", "unknown")
-                total = u.get("total_requests", 0)
-                tokens = u.get("total_tokens", 0)
-                success = u.get("successful", 0)
-                failed = u.get("failed", 0)
-                print(f"  {provider}/{model}: {total} reqs, {tokens:,} tokens (OK:{success} FAIL:{failed})")
-
-        # Show active paper sessions
-        sessions = db.get_paper_sessions(limit=5)
-        if sessions:
-            print(f"\n--- Paper Sessions ---")
-            for s in sessions:
-                sid = s.get("id", "?")
-                status = s.get("status", "?")
-                exchange = s.get("exchange", "?")
-                balance = s.get("current_balance", 0)
-                last_candle = s.get("last_processed_candle", "never")
-                print(f"  {sid}: {status} (${balance:,.2f}) exchange={exchange} last_candle={last_candle}")
-
-    except Exception as e:
-        logger.debug("Could not load status data: %s", e)
-    finally:
-        if db:
-            db.close()
-
-    print(f"\n--- Safety ---")
-    print(f"  Real Orders:     DISABLED")
-    print(f"  Live Trading:    DISABLED")
-    print(f"  Software:        v{SOFTWARE_VERSION}")
-
-    errors = Config.validate()
-    if errors:
-        print("\nCONFIG ERRORS:")
-        for e in errors:
-            print(f"  - {e}")
-    else:
-        print("\nConfig: OK")
-
-
 def main():
-    parser = argparse.ArgumentParser(description="AshtradingAI - AI Multi-Trader Tournament System")
-    parser.add_argument("--mode", choices=[
-        "backtest", "paper", "status", "leaderboard",
-        "tournament", "tournament-backtest",
-        "paper-live", "paper-live-test",
-    ], default="status")
-    parser.add_argument("--log-level", default="INFO")
+    parser = argparse.ArgumentParser(description="AshtradingAI Trading Bot")
+    parser.add_argument("--mode", required=True,
+                        choices=["backtest", "paper", "status", "leaderboard",
+                                 "tournament", "tournament-backtest",
+                                 "paper-live", "paper-live-test"],
+                        help="Operating mode")
     args = parser.parse_args()
-    setup_logging(level=args.log_level)
 
-    errors = Config.validate()
-    if errors:
-        for e in errors:
-            logger.error("Config error: %s", e)
-        if Config.LIVE_TRADING:
-            logger.critical("LIVE_TRADING is enabled. Refusing to start.")
-            sys.exit(1)
+    setup_logging()
+    logger.info("Starting AshtradingAI in %s mode", args.mode)
 
-    cmd_map = {
-        "backtest": cmd_backtest,
-        "paper": cmd_paper,
-        "status": cmd_status,
-        "leaderboard": cmd_leaderboard,
-        "tournament": cmd_tournament,
-        "tournament-backtest": cmd_tournament_backtest,
-        "paper-live": cmd_paper_live,
-        "paper-live-test": cmd_paper_live_test,
-    }
-    cmd_map[args.mode](args)
-    parser = argparse.ArgumentParser(description="AshtradingAI - AI Multi-Trader Tournament System")
-    parser.add_argument("--mode", choices=[
-        "backtest", "paper", "status", "leaderboard",
-        "tournament", "tournament-backtest",
-        "paper-live", "paper-live-test",
-    ], default="status")
-    parser.add_argument("--log-level", default="INFO")
-    args = parser.parse_args()
-    setup_logging(level=args.log_level)
-
-    errors = Config.validate()
-    if errors:
-        for e in errors:
-            logger.error("Config error: %s", e)
-        if Config.LIVE_TRADING:
-            logger.critical("LIVE_TRADING is enabled. Refusing to start.")
-            sys.exit(1)
-
-    cmd_map = {
-        "backtest": cmd_backtest,
-        "paper": cmd_paper,
-        "status": cmd_status,
-        "leaderboard": cmd_leaderboard,
-        "tournament": cmd_tournament,
-        "tournament-backtest": cmd_tournament_backtest,
-        "paper-live": cmd_paper_live,
-        "paper-live-test": cmd_paper_live_test,
-    }
-    cmd_map[args.mode](args)
+    if args.mode == "backtest":
+        cmd_backtest(args)
+    elif args.mode == "paper":
+        cmd_paper(args)
+    elif args.mode == "status":
+        cmd_status(args)
+    elif args.mode == "leaderboard":
+        cmd_leaderboard(args)
+    elif args.mode == "tournament":
+        cmd_tournament(args)
+    elif args.mode == "tournament-backtest":
+        cmd_tournament_backtest(args)
+    elif args.mode == "paper-live":
+        cmd_paper_live(args)
+    elif args.mode == "paper-live-test":
+        cmd_paper_live_test(args)
 
 
 if __name__ == "__main__":
