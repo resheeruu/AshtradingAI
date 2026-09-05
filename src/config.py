@@ -103,6 +103,10 @@ class Config:
     MT5_MAGIC_NUMBER: int = _int(os.getenv("MT5_MAGIC_NUMBER", "20260904"), 20260904)
     MT5_SYMBOL_MAP: str = os.getenv("MT5_SYMBOL_MAP", "")
 
+    # Milestone: Coins.ph Market Data Configuration
+    COINSPH_ENABLED: bool = _bool(os.getenv("COINSPH_ENABLED", "false"), False)
+    COINSPH_API_BASE_URL: str = os.getenv("COINSPH_API_BASE_URL", "https://api.pro.coins.ph")
+
     # Milestone 7: Advanced Strategy & Risk Monitor
     M7_ENABLED: bool = _bool(os.getenv("M7_ENABLED", "false"), False)
     M7_ATR_FILTER_ENABLED: bool = _bool(os.getenv("M7_ATR_FILTER_ENABLED", "true"), True)
@@ -153,6 +157,10 @@ class Config:
             errors.append("CANDLE_LIMIT must be between 1 and 5000")
         if cls.MT5_ENABLED and cls.LIVE_TRADING:
             errors.append("MT5_ENABLED and LIVE_TRADING cannot both be true in M6")
+        if cls.COINSPH_ENABLED and cls.LIVE_TRADING:
+            errors.append("COINSPH_ENABLED and LIVE_TRADING cannot both be true")
+        if cls.EXCHANGE == "coinsph" and cls.LIVE_TRADING:
+            errors.append("EXCHANGE=coinsph with LIVE_TRADING=true is not allowed in paper-live mode")
         return errors
 
     @classmethod
@@ -196,6 +204,8 @@ class Config:
             "MT5_DEMO_ONLY": cls.MT5_DEMO_ONLY,
             "MT5_DEMO_TRADING_ENABLED": cls.MT5_DEMO_TRADING_ENABLED,
             "MT5_MAGIC_NUMBER": cls.MT5_MAGIC_NUMBER,
+            "COINSPH_ENABLED": cls.COINSPH_ENABLED,
+            "COINSPH_API_BASE_URL": cls.COINSPH_API_BASE_URL,
             "M7_ENABLED": cls.M7_ENABLED,
             "M7_RISK_PERCENT": cls.M7_RISK_PERCENT,
         }

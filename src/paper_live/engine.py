@@ -105,7 +105,13 @@ class PaperLiveEngine:
         self.heartbeat_seconds = heartbeat_seconds
         self.candle_limit = candle_limit or Config.CANDLE_LIMIT
 
-        self.market_data = MarketData(exchange_id=exchange)
+        if exchange == "coinsph":
+            from src.market.coinsph import CoinsPhMarketData
+            self.market_data = CoinsPhMarketData(
+                base_url=Config.COINSPH_API_BASE_URL,
+            )
+        else:
+            self.market_data = MarketData(exchange_id=exchange)
         self.market_health = MarketHealth(max_stale_seconds=max_stale_seconds)
         self.schedulers: Dict[str, CandleScheduler] = {}
         for sym in self.symbols:
@@ -158,6 +164,9 @@ class PaperLiveEngine:
                 logger.warning("Could not mark session stopped: %s", e)
 
     def _print_banner(self) -> None:
+        exchange_display = self.exchange
+        if self.exchange == "coinsph":
+            exchange_display = "Coins.ph"
         print("=" * 40)
         print("  ASHTRADINGAI PAPER-LIVE MODE")
         print("=" * 40)
@@ -165,7 +174,7 @@ class PaperLiveEngine:
         print(f"  REAL ORDERS:      NO")
         print(f"  LIVE TRADING:     DISABLED")
         print(f"  Session:          {self.session_id}")
-        print(f"  Exchange:         {self.exchange}")
+        print(f"  Exchange:         {exchange_display}")
         print(f"  Symbols:          {', '.join(self.symbols)}")
         print(f"  Timeframe:        {self.timeframe}")
         print(f"  Balance:          ${self.starting_balance:,.2f}")

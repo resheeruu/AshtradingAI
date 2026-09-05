@@ -53,9 +53,17 @@ def _get_health_manager() -> ProviderHealthManager:
     return ProviderHealthManager(config)
 
 
+def _get_market_data(exchange: str):
+    """Return the appropriate market data provider for the given exchange."""
+    if exchange == "coinsph":
+        from src.market.coinsph import CoinsPhMarketData
+        return CoinsPhMarketData(base_url=Config.COINSPH_API_BASE_URL)
+    return MarketData(exchange_id=exchange)
+
+
 def _fetch_live_data(exchange: str, symbols: list, timeframe: str, limit: int) -> dict:
     """Fetch live market data for all symbols."""
-    md = MarketData(exchange_id=exchange)
+    md = _get_market_data(exchange)
     data = {}
     for sym in symbols:
         logger.info("Fetching %s candles for %s...", limit, sym)
@@ -71,7 +79,7 @@ def _fetch_live_data(exchange: str, symbols: list, timeframe: str, limit: int) -
 
 def _fetch_live_data_strict(exchange: str, symbols: list, timeframe: str, limit: int) -> dict:
     """Fetch live market data — NO synthetic fallback. Returns empty dict on failure."""
-    md = MarketData(exchange_id=exchange)
+    md = _get_market_data(exchange)
     data = {}
     for sym in symbols:
         logger.info("Fetching %s candles for %s...", limit, sym)
@@ -202,6 +210,9 @@ def cmd_status(args):
     print(f"LIVE_TRADING: {Config.LIVE_TRADING}")
     print(f"Environment:  {Config.APP_ENV}")
     print(f"Exchange:     {Config.EXCHANGE}")
+    if Config.EXCHANGE == "coinsph":
+        print(f"Market Data:  {'ENABLED' if Config.COINSPH_ENABLED else 'DISABLED'} (Coins.ph)")
+        print(f"API Base URL: {Config.COINSPH_API_BASE_URL}")
     print(f"Symbols:      {Config.SYMBOLS}")
     print(f"Timeframe:    {Config.TIMEFRAME}")
     print(f"Candle Limit: {Config.CANDLE_LIMIT}")
@@ -602,8 +613,12 @@ def cmd_paper_live(args):
         print("ERROR: LIVE_TRADING=true. Paper-live mode requires LIVE_TRADING=false.")
         sys.exit(1)
 
+    if Config.EXCHANGE == "coinsph" and not Config.COINSPH_ENABLED:
+        logger.warning("EXCHANGE=coinsph but COINSPH_ENABLED=false. Enabling Coins.ph market data.")
+        print("NOTE: EXCHANGE=coinsph detected. Coins.ph market data adapter will be used.")
+
     session_id = Config.PAPER_SESSION_ID or str(uuid.uuid4())[:12]
-    logger.info("Starting paper-live session (session=%s)", session_id)
+    logger.info("Starting paper-live session (session=%s, exchange=%s)", session_id, Config.EXCHANGE)
 
     ai = TestStrategy(ai_id="paper-live-strategy")
 
