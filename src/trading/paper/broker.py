@@ -10,11 +10,16 @@ logger = logging.getLogger(__name__)
 
 
 class PaperBroker:
-    """Simulates order execution for paper trading."""
+    """Simulates order execution for paper trading.
 
-    def __init__(self, fee: float = 0.001, slippage: float = 0.0005):
+    Models: fee, slippage, and spread.
+    Spread is applied symmetrically around the mid price.
+    """
+
+    def __init__(self, fee: float = 0.001, slippage: float = 0.0005, spread: float = 0.0):
         self.fee = fee
         self.slippage = slippage
+        self.spread = spread  # Half-spread applied to both buy and sell
         self._order_book: dict[str, dict] = {}
 
     def execute_buy(
@@ -27,7 +32,9 @@ class PaperBroker:
         take_profit: Optional[float] = None,
         timestamp: Optional[str] = None,
     ) -> Optional[dict]:
-        slippage_price = price * (1 + self.slippage)
+        # Buy at ask = mid + half-spread + slippage
+        spread_cost = price * self.spread / 2 if self.spread > 0 else 0.0
+        slippage_price = price * (1 + self.slippage) + spread_cost
         fee_amount = slippage_price * quantity * self.fee
         ts = timestamp or datetime.now(timezone.utc).isoformat()
 
@@ -70,7 +77,9 @@ class PaperBroker:
         pos = portfolio.get_position(symbol)
         if pos is None:
             return None
-        slippage_price = price * (1 - self.slippage)
+        # Sell at bid = mid - half-spread - slippage
+        spread_cost = price * self.spread / 2 if self.spread > 0 else 0.0
+        slippage_price = price * (1 - self.slippage) - spread_cost
         fee_amount = slippage_price * pos.quantity * self.fee
         ts = timestamp or datetime.now(timezone.utc).isoformat()
 
