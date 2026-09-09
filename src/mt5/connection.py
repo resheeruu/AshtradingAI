@@ -394,6 +394,73 @@ class MT5ConnectionManager:
             logger.error("order_calc_margin failed: %s", e)
             return None
 
+    def orders_get(
+        self, symbol: Optional[str] = None, group: Optional[str] = None
+    ) -> List[dict]:
+        """Get pending orders, optionally filtered by symbol or group."""
+        if not self.health.is_connected:
+            return []
+        try:
+            mt5 = _get_mt5()
+            kwargs: Dict[str, Any] = {}
+            if symbol:
+                kwargs["symbol"] = symbol
+            if group:
+                kwargs["group"] = group
+            orders = mt5.orders_get(**kwargs)
+            if orders is None:
+                return []
+            result = []
+            for order in orders:
+                result.append({
+                    "ticket": getattr(order, "ticket", 0),
+                    "symbol": getattr(order, "symbol", ""),
+                    "type": getattr(order, "type", -1),
+                    "volume": float(getattr(order, "volume_current", 0)),
+                    "volume_initial": float(getattr(order, "volume_initial", 0)),
+                    "price_open": float(getattr(order, "price_open", 0)),
+                    "sl": float(getattr(order, "sl", 0)),
+                    "tp": float(getattr(order, "tp", 0)),
+                    "price_current": float(getattr(order, "price_current", 0)),
+                    "magic": getattr(order, "magic", 0),
+                    "comment": getattr(order, "comment", ""),
+                    "time_setup": getattr(order, "time_setup", 0),
+                    "time_expiration": getattr(order, "time_expiration", 0),
+                })
+            return result
+        except Exception as e:
+            logger.error("orders_get failed: %s", e)
+            return []
+
+    def symbols_get(self, group: Optional[str] = None) -> List[dict]:
+        """Get all available MT5 symbols, optionally filtered by group."""
+        if not self.health.is_connected:
+            return []
+        try:
+            mt5 = _get_mt5()
+            kwargs: Dict[str, Any] = {}
+            if group:
+                kwargs["group"] = group
+            symbols = mt5.symbols_get(**kwargs)
+            if symbols is None:
+                return []
+            result = []
+            for sym in symbols:
+                result.append({
+                    "name": getattr(sym, "name", ""),
+                    "point": getattr(sym, "point", 0.0),
+                    "digits": getattr(sym, "digits", 0),
+                    "volume_min": getattr(sym, "volume_min", 0.0),
+                    "volume_max": getattr(sym, "volume_max", 0.0),
+                    "volume_step": getattr(sym, "volume_step", 0.0),
+                    "trade_mode": getattr(sym, "trade_mode", -1),
+                    "visible": getattr(sym, "visible", False),
+                })
+            return result
+        except Exception as e:
+            logger.error("symbols_get failed: %s", e)
+            return []
+
 
 def _account_info_to_dict(info) -> dict:
     """Convert MT5 AccountInfo to a plain dict (no secrets)."""

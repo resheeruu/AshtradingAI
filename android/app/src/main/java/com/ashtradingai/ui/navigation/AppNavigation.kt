@@ -12,13 +12,15 @@ import androidx.compose.ui.unit.dp
 import com.ashtradingai.ui.screens.*
 import com.ashtradingai.ui.theme.*
 import com.ashtradingai.viewmodel.AppUiState
+import com.ashtradingai.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AshtradingAINavigation(
     uiState: AppUiState,
     onAskAI: (String) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    viewModel: MainViewModel? = null
 ) {
     var currentScreen by remember { mutableStateOf(Screen.Dashboard.route) }
 
@@ -108,7 +110,13 @@ fun AshtradingAINavigation(
                     Screen.MT5Demo.route -> MT5DemoScreen(uiState)
                     Screen.AIResearcher.route -> AIResearcherScreen(uiState, onAskAI)
                 Screen.SignalReplay.route -> SignalReplayScreen(uiState)
-                Screen.Settings.route -> SettingsScreen(uiState)
+                Screen.Settings.route -> SettingsScreen(
+                    uiState = uiState,
+                    onUpdateServerUrl = { url -> viewModel?.updateServerUrl(url) },
+                    onUpdateApiToken = { token -> viewModel?.updateApiToken(token) },
+                    onSetAutoRefresh = { enabled -> viewModel?.setAutoRefresh(enabled) },
+                    onSetRefreshInterval = { seconds -> viewModel?.setRefreshInterval(seconds) }
+                )
             }
         }
     }

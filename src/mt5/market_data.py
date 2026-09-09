@@ -1,5 +1,8 @@
 """MT5 market data adapter — converts MT5 rates into AshtradingAI candle format.
 
+Uses MT5ConnectionManager wrappers for all MT5 API calls.
+Never imports MetaTrader5 directly.
+
 Preserves the existing candle format:
 {
     "timestamp": "ISO8601 string",
@@ -44,7 +47,10 @@ TIMEFRAME_SECONDS = {
 
 
 class MT5MarketData:
-    """Retrieves candle data from MT5 and converts to AshtradingAI format."""
+    """Retrieves candle data from MT5 and converts to AshtradingAI format.
+
+    Uses MT5ConnectionManager for all MT5 API access.
+    """
 
     def __init__(self, connection_manager, symbol_map: Optional[Dict[str, str]] = None):
         """
@@ -79,16 +85,18 @@ class MT5MarketData:
             return []
 
         try:
-            import MetaTrader5 as mt5
+            # Use lazy import for MetaTrader5 (only needed for copy_rates_from_pos)
+            from src.mt5.connection import _get_mt5
+            mt5 = _get_mt5()
 
-            # Verify symbol exists and is visible
-            sym_info = mt5.symbol_info(mt5_symbol)
+            # Verify symbol exists and is visible via connection manager
+            sym_info = self.connection.symbol_info(mt5_symbol)
             if sym_info is None:
                 logger.error("MT5 symbol not found: %s (mapped from %s)", mt5_symbol, symbol)
-                return False  # Signal to health that symbol is unavailable
+                return []
 
-            if not sym_info.visible:
-                if not mt5.symbol_select(mt5_symbol, True):
+            if not sym_info.get("visible", False):
+                if not self.connection.symbol_select(mt5_symbol, True):
                     logger.error("Failed to select MT5 symbol: %s", mt5_symbol)
                     return []
 
@@ -139,15 +147,10 @@ class MT5MarketData:
             return 0.0
 
         mt5_symbol = self.map_symbol(symbol)
-        try:
-            import MetaTrader5 as mt5
-            tick = mt5.symbol_info_tick(mt5_symbol)
-            if tick is None:
-                return 0.0
-            return float(tick.bid)
-        except Exception as e:
-            logger.error("Error getting MT5 price for %s: %s", symbol, e)
+        tick = self.connection.symbol_info_tick(mt5_symbol)
+        if tick is None:
             return 0.0
+        return float(tick.get("bid", 0.0))
 
     def get_symbol_info(self, symbol: str) -> Optional[dict]:
         """Get MT5 symbol information (point, digits, volume limits, etc.)."""
@@ -155,21 +158,4 @@ class MT5MarketData:
             return None
 
         mt5_symbol = self.map_symbol(symbol)
-        try:
-            import MetaTrader5 as mt5
-            info = mt5.symbol_info(mt5_symbol)
-            if info is None:
-                return None
-            return {
-                "name": getattr(info, "name", ""),
-                "point": getattr(info, "point", 0.0),
-                "digits": getattr(info, "digits", 0),
-                "volume_min": getattr(info, "volume_min", 0.0),
-                "volume_max": getattr(info, "volume_max", 0.0),
-                "volume_step": getattr(info, "volume_step", 0.0),
-                "trade_mode": getattr(info, "trade_mode", 0),
-                "visible": getattr(info, "visible", False),
-            }
-        except Exception as e:
-            logger.error("Error getting MT5 symbol info for %s: %s", symbol, e)
-            return None
+        return self.connection.symbol_info(mt5_symbol)

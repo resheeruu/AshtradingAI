@@ -345,7 +345,10 @@ Shows:
 
 - `python-dotenv` — environment variable loading
 - `requests` — HTTP client (for live market data via CCXT REST API)
-- `MetaTrader5` — MT5 terminal integration (optional, only when MT5_ENABLED=true)
+- `fastapi` — REST API server
+- `uvicorn` — ASGI server
+- `pydantic` — data validation
+- `MetaTrader5` — MT5 terminal integration (optional, only when MT5_ENABLED=true, Windows only)
 - Python 3.10+ standard library (including sqlite3)
 
 No numpy, pandas, or heavy ML frameworks. Bounded memory usage.
@@ -537,15 +540,130 @@ Mock MT5 connection, market data, and broker available for offline testing.
 ## Testing
 
 ```bash
-# 276 unit tests (226 original + 50 MT5)
+# 660 unit tests
 python -m pytest tests/ -v
-
-# 50 MT5-specific tests
-python -m pytest tests/test_mt5.py -v
 
 # 12-test smoke test
 python scripts/smoke_test.py
 ```
+
+## REST API Server
+
+FastAPI backend for the Android companion app. Provides read-only access to trading data and MT5 demo status.
+
+### Quick Start
+
+```bash
+pip install -r requirements.txt
+python api_server.py
+# API runs on http://0.0.0.0:8000
+```
+
+### API Authentication
+
+Set `API_SECRET_KEY` in `.env` to enable token-based auth:
+
+```env
+API_SECRET_KEY=your-secret-key-here
+```
+
+Android app sends `Authorization: Bearer <token>` header. When key is unset, auth is disabled (dev mode).
+
+### Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/status` | GET | No | System status + safety flags |
+| `/api/safety` | GET | No | Safety center status |
+| `/api/health` | GET | Yes | Full system health check |
+| `/api/account` | GET | Yes | Account summary |
+| `/api/positions` | GET | Yes | Open positions |
+| `/api/trades` | GET | Yes | Recent trades |
+| `/api/strategies` | GET | Yes | Strategy metrics |
+| `/api/experiments` | GET | Yes | Backtest experiments |
+| `/api/signals` | GET | Yes | M7 signals |
+| `/api/ai-decisions` | GET | Yes | AI decisions |
+| `/api/logs` | GET | Yes | Event logs |
+| `/api/config` | GET | Yes | Public config (no secrets) |
+| `/api/market/health` | GET | Yes | Market data health |
+| `/api/mt5/status` | GET | Yes | MT5 connection status |
+| `/api/mt5/account` | GET | Yes | MT5 account info |
+| `/api/mt5/positions` | GET | Yes | MT5 open positions |
+| `/api/mt5/orders` | GET | Yes | MT5 pending orders |
+| `/api/mt5/symbols` | GET | Yes | MT5 available symbols |
+| `/api/mt5/quote/{symbol}` | GET | Yes | MT5 bid/ask quote |
+| `/api/mt5/heartbeat` | GET | Yes | MT5 connection heartbeat |
+| `/api/ai/research` | POST | Yes | AI research query |
+| `/api/research/reports` | GET | Yes | M9-M13 reports |
+
+**No execution endpoints exist.** The API is read-only for MT5. All trade execution goes through the CLI (`bot.py`).
+
+### CORS
+
+Default: allow all origins (`*`). Set `CORS_ORIGINS` env var to restrict in production:
+
+```env
+CORS_ORIGINS=https://your-domain.com,https://another.com
+```
+
+## Android Companion App
+
+Kotlin/Jetpack Compose mobile app for monitoring the AshtradingAI trading system.
+
+### Architecture
+
+```
+Android App → FastAPI API Server → readonly_api.py → MT5ConnectionManager → MT5 Desktop (DEMO)
+```
+
+- Android NEVER communicates directly with MT5
+- All MT5 access is read-only via the API layer
+- No execution endpoints exposed to Android
+
+### Features
+
+- **Dashboard**: Account balance, positions, PnL, connection status
+- **Safety Center**: 6-layer defense visualization, safety flag status
+- **MT5 Demo**: MT5 connection status, account info, positions, quotes, heartbeat
+- **Strategies**: AI strategy performance metrics
+- **Experiments**: Backtest results and history
+- **Signals**: M7 signal log with direction, phase, confidence
+- **Logs**: Event log viewer with category/severity filtering
+- **AI Researcher**: Ask questions about trading data
+- **Settings**: Server URL, API token, auto-refresh configuration
+
+### Settings (Persistent)
+
+- **Server URL**: Backend API address (default: `http://10.0.2.2:8000` for emulator)
+- **API Token**: Bearer token for authenticated endpoints
+- **Auto-Refresh**: Toggle on/off, configurable interval (10s/15s/30s/60s)
+- Settings saved to SharedPreferences, persist across app restarts
+
+### Error Handling
+
+The app handles all API error responses:
+- `401 Unauthorized` → Shows auth error, prompts for token
+- `403 Forbidden` → Shows permission error
+- `408 Timeout` → Shows connection timeout
+- `429 Rate Limited` → Shows rate limit message
+- `5xx Server Error` → Shows server error
+- Network errors → Falls back to mock data
+
+### Build
+
+Requires Android SDK (compileSdk=35, minSdk=26, targetSdk=35):
+
+```bash
+cd android
+./gradlew assembleDebug    # Debug build
+./gradlew assembleRelease  # Release build (requires signing config)
+```
+
+Or open `android/` in Android Studio.
+
+### Mock Mode
+
+When backend is unavailable, the app displays mock data with a prominent "DEVELOPMENT MOCK" banner. All screens function normally in mock mode.
 
 ## Important Disclaimer
 

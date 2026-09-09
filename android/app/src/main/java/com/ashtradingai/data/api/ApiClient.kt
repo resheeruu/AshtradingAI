@@ -5,14 +5,29 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class ApiClient(private var baseUrl: String = "http://10.0.2.2:8000") {
+class ApiClient(
+    private var baseUrl: String = "http://10.0.2.2:8000",
+    private var apiToken: String = ""
+) {
+
+    private val authInterceptor = Interceptor { chain ->
+        val original = chain.request()
+        val builder = original.newBuilder()
+        if (apiToken.isNotEmpty()) {
+            builder.header("Authorization", "Bearer $apiToken")
+        }
+        chain.proceed(builder.build())
+    }
 
     private val client = OkHttpClient.Builder()
+        .addInterceptor(authInterceptor)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
@@ -23,13 +38,25 @@ class ApiClient(private var baseUrl: String = "http://10.0.2.2:8000") {
         baseUrl = url.trimEnd('/')
     }
 
+    fun updateApiToken(token: String) {
+        apiToken = token.trim()
+    }
+
     private suspend fun get(endpoint: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl$endpoint")
             .get()
             .build()
         val response = client.newCall(request).execute()
-        response.body?.string() ?: throw Exception("Empty response from $endpoint")
+        when (val code = response.code) {
+            200 -> response.body?.string() ?: throw IOException("Empty response from $endpoint")
+            401 -> throw AuthException("Unauthorized: invalid or missing API token")
+            403 -> throw AuthException("Forbidden: insufficient permissions")
+            408 -> throw TimeoutException("Request timeout: $endpoint")
+            429 -> throw RateLimitException("Rate limited: too many requests")
+            in 500..599 -> throw ServerException("Server error $code from $endpoint")
+            else -> throw IOException("HTTP $code from $endpoint")
+        }
     }
 
     private suspend fun post(endpoint: String, body: String): String = withContext(Dispatchers.IO) {
@@ -38,7 +65,15 @@ class ApiClient(private var baseUrl: String = "http://10.0.2.2:8000") {
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
         val response = client.newCall(request).execute()
-        response.body?.string() ?: throw Exception("Empty response from $endpoint")
+        when (val code = response.code) {
+            200 -> response.body?.string() ?: throw IOException("Empty response from $endpoint")
+            401 -> throw AuthException("Unauthorized: invalid or missing API token")
+            403 -> throw AuthException("Forbidden: insufficient permissions")
+            408 -> throw TimeoutException("Request timeout: $endpoint")
+            429 -> throw RateLimitException("Rate limited: too many requests")
+            in 500..599 -> throw ServerException("Server error $code from $endpoint")
+            else -> throw IOException("HTTP $code from $endpoint")
+        }
     }
 
     private fun String.toMediaType() = okhttp3.MediaType.parse("application/json")!!
@@ -162,6 +197,12 @@ class ApiClient(private var baseUrl: String = "http://10.0.2.2:8000") {
         map["reports"] ?: emptyList()
     }
 
+    suspend fun getHealth(): Map<String, Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/health")
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
     suspend fun askAI(question: String): AIResearchResponse = withContext(Dispatchers.IO) {
         val body = gson.toJson(AIResearchQuery(question))
         val json = post("/api/ai/research", body)
@@ -176,3 +217,8 @@ class ApiClient(private var baseUrl: String = "http://10.0.2.2:8000") {
         map["config"] as? Map<String, Any> ?: emptyMap()
     }
 }
+
+class AuthException(message: String) : IOException(message)
+class TimeoutException(message: String) : IOException(message)
+class RateLimitException(message: String) : IOException(message)
+class ServerException(message: String) : IOException(message)

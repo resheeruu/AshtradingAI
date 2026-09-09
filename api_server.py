@@ -87,17 +87,21 @@ def _constant_time_compare(a: str, b: str) -> bool:
 
 # ── App Setup ─────────────────────────────────────────────────────
 
+APP_VERSION = "1.5.1"
+
 app = FastAPI(
     title="AshtradingAI API",
     description="Research platform API for the AshtradingAI mobile companion",
-    version="1.5.0",
+    version=APP_VERSION,
 )
 
+# CORS: restrict in production, allow all in dev
+_cors_origins = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],  # Restrict to needed methods
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -122,6 +126,29 @@ def db_connection():
         yield conn
     finally:
         conn.close()
+
+
+def log_event(category: str, severity: str, message: str, details: Optional[str] = None) -> None:
+    """Log an event to the event_logs table."""
+    try:
+        with db_connection() as conn:
+            event_id = str(__import__("uuid").uuid4())[:12]
+            ts = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO event_logs (id, timestamp, category, severity, message, details_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (event_id, ts, category, severity, message, details),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.debug("Failed to log event: %s", e)
+
+
+# ── Kill Switch State ─────────────────────────────────────────────
+_kill_switch_active = False
+
+
+def is_kill_switch_active() -> bool:
+    return _kill_switch_active
 
 
 # ── Response Models ──────────────────────────────────────────────
@@ -247,7 +274,7 @@ class AIResearchResponse(BaseModel):
 
 @app.get("/")
 def root():
-    return {"service": "AshtradingAI API", "version": "1.0.0", "status": "running"}
+    return {"service": "AshtradingAI API", "version": APP_VERSION, "status": "running"}
 
 
 @app.get("/api/status", response_model=SystemStatus)
@@ -291,7 +318,7 @@ def get_safety():
 
 
 @app.get("/api/account", response_model=AccountSummary)
-def get_account():
+def get_account(authorized: bool = Depends(verify_api_key)):
     """Account summary from latest paper session."""
     with db_connection() as conn:
         row = conn.execute(
@@ -321,7 +348,7 @@ def get_account():
 
 
 @app.get("/api/positions")
-def get_positions():
+def get_positions(authorized: bool = Depends(verify_api_key)):
     """List open positions from active paper sessions."""
     with db_connection() as conn:
         rows = conn.execute(
@@ -348,7 +375,7 @@ def get_positions():
 
 
 @app.get("/api/trades")
-def get_trades(limit: int = Query(50, ge=1, le=500)):
+def get_trades(limit: int = Query(50, ge=1, le=500), authorized: bool = Depends(verify_api_key)):
     """Recent trades from the database."""
     with db_connection() as conn:
         rows = conn.execute(
@@ -371,7 +398,7 @@ def get_trades(limit: int = Query(50, ge=1, le=500)):
 
 
 @app.get("/api/strategies")
-def get_strategies():
+def get_strategies(authorized: bool = Depends(verify_api_key)):
     """List available strategies with metrics from backtest runs."""
     with db_connection() as conn:
         rows = conn.execute(
@@ -402,7 +429,7 @@ def get_strategies():
 
 
 @app.get("/api/experiments")
-def get_experiments(limit: int = Query(50, ge=1, le=200)):
+def get_experiments(limit: int = Query(50, ge=1, le=200), authorized: bool = Depends(verify_api_key)):
     """List backtest experiments."""
     with db_connection() as conn:
         rows = conn.execute(
@@ -430,7 +457,7 @@ def get_experiments(limit: int = Query(50, ge=1, le=200)):
 
 
 @app.get("/api/signals")
-def get_signals(limit: int = Query(100, ge=1, le=1000)):
+def get_signals(limit: int = Query(100, ge=1, le=1000), authorized: bool = Depends(verify_api_key)):
     """M7 signals from the database."""
     with db_connection() as conn:
         try:
@@ -459,7 +486,7 @@ def get_signals(limit: int = Query(100, ge=1, le=1000)):
 
 
 @app.get("/api/ai-decisions")
-def get_ai_decisions(limit: int = Query(100, ge=1, le=1000)):
+def get_ai_decisions(limit: int = Query(100, ge=1, le=1000), authorized: bool = Depends(verify_api_key)):
     """AI decisions from the database."""
     with db_connection() as conn:
         rows = conn.execute(
@@ -485,6 +512,7 @@ def get_logs(
     category: Optional[str] = None,
     severity: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
+    authorized: bool = Depends(verify_api_key),
 ):
     """Event logs from the database. Categories: SYSTEM, MARKET, STRATEGY, AI, RISK, PAPER, MT5, SAFETY, ERROR."""
     with db_connection() as conn:
@@ -564,7 +592,7 @@ def get_mt5_heartbeat(authorized: bool = Depends(verify_api_key)):
 
 
 @app.get("/api/config")
-def get_config():
+def get_config(authorized: bool = Depends(verify_api_key)):
     """Public configuration (no secrets)."""
     config_dict = Config.as_dict()
     safe_config = {k: v for k, v in config_dict.items()
@@ -573,7 +601,7 @@ def get_config():
 
 
 @app.get("/api/market/health")
-def get_market_health():
+def get_market_health(authorized: bool = Depends(verify_api_key)):
     """Market data health status."""
     return {
         "data_source": Config.DATA_SOURCE,
@@ -584,8 +612,70 @@ def get_market_health():
     }
 
 
+@app.get("/api/health")
+def get_health(authorized: bool = Depends(verify_api_key)):
+    """Full system health: application, database, MT5, safety."""
+    health = {
+        "application": "healthy",
+        "version": APP_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "database": "unknown",
+        "mt5": "unknown",
+        "safety": {
+            "live_trading": Config.LIVE_TRADING,
+            "mt5_demo_only": Config.MT5_DEMO_ONLY,
+            "mt5_demo_trading_enabled": Config.MT5_DEMO_TRADING_ENABLED,
+        },
+    }
+    # Database check
+    try:
+        with db_connection() as conn:
+            conn.execute("SELECT 1")
+        health["database"] = "healthy"
+    except Exception as e:
+        health["database"] = f"error: {e}"
+    # MT5 check
+    try:
+        from src.mt5.readonly_api import get_heartbeat
+        hb = get_heartbeat()
+        health["mt5"] = "connected" if hb.get("connected") else "disconnected"
+        health["mt5_heartbeat"] = hb
+    except Exception as e:
+        health["mt5"] = f"error: {e}"
+    log_event("SYSTEM", "INFO", "Health check completed")
+    return health
+
+
+@app.get("/api/kill-switch")
+def get_kill_switch(authorized: bool = Depends(verify_api_key)):
+    """Get kill switch status."""
+    return {
+        "active": _kill_switch_active,
+        "message": "ALL TRADING HALTED" if _kill_switch_active else "Normal operation",
+    }
+
+
+@app.post("/api/kill-switch")
+def set_kill_switch(active: bool = True, authorized: bool = Depends(verify_api_key)):
+    """Activate or deactivate the global kill switch.
+
+    When activated: no new orders, no strategy execution that creates orders.
+    Existing positions are NOT closed (no safe-close mechanism implemented).
+    """
+    global _kill_switch_active
+    _kill_switch_active = active
+    severity = "CRITICAL" if active else "INFO"
+    message = "KILL SWITCH ACTIVATED — all trading halted" if active else "KILL SWITCH DEACTIVATED — trading resumed"
+    log_event("SAFETY", severity, message)
+    logger.log(logging.CRITICAL if active else logging.INFO, message)
+    return {
+        "active": _kill_switch_active,
+        "message": message,
+    }
+
+
 @app.post("/api/ai/research", response_model=AIResearchResponse)
-def ai_research(query: AIResearchQuery):
+def ai_research(query: AIResearchQuery, authorized: bool = Depends(verify_api_key)):
     """AI Research endpoint — reads existing data to answer questions.
     NOTE: This is a placeholder. Full AI integration requires backend AI gateway."""
     question = query.question.lower()
@@ -633,7 +723,7 @@ def ai_research(query: AIResearchQuery):
 
 
 @app.get("/api/research/reports")
-def get_research_reports():
+def get_research_reports(authorized: bool = Depends(verify_api_key)):
     """List available research reports (M9-M13)."""
     reports_dir = Path(__file__).resolve().parent
     reports = []

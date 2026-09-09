@@ -273,6 +273,19 @@ class Database:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS event_logs (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                category TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'INFO',
+                message TEXT NOT NULL,
+                details_json TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_event_logs_timestamp ON event_logs(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_event_logs_category ON event_logs(category);
+            CREATE INDEX IF NOT EXISTS idx_event_logs_severity ON event_logs(severity);
+
             CREATE INDEX IF NOT EXISTS idx_m7_signals_session ON m7_signals(session_id);
             CREATE INDEX IF NOT EXISTS idx_m7_signals_symbol ON m7_signals(symbol);
             CREATE INDEX IF NOT EXISTS idx_m7_state_session ON m7_state(session_id);

@@ -240,9 +240,28 @@ def get_orders() -> List[dict]:
     if not mgr.health.is_connected:
         return []
 
-    # MT5ConnectionManager doesn't have orders_get wrapper yet.
-    # Pending orders require mt5.orders_get() which isn't wrapped.
-    return []
+    orders = mgr.orders_get()
+    result = []
+    for order in orders:
+        result.append({
+            "ticket": order.get("ticket", 0),
+            "symbol": order.get("symbol", ""),
+            "type": order.get("type", -1),
+            "volume": order.get("volume", 0.0),
+            "volume_initial": order.get("volume_initial", 0.0),
+            "price_open": order.get("price_open", 0.0),
+            "sl": order.get("sl", 0.0),
+            "tp": order.get("tp", 0.0),
+            "price_current": order.get("price_current", 0.0),
+            "magic": order.get("magic", 0),
+            "comment": order.get("comment", ""),
+            "time_setup": order.get("time_setup", 0),
+            "time_expiration": order.get("time_expiration", 0),
+            "environment": "MT5 DEMO",
+        })
+    if result:
+        logger.debug("MT5_ORDER_REFRESH: %d pending orders", len(result))
+    return result
 
 
 def get_symbol_info(symbol: str) -> Optional[dict]:
@@ -320,12 +339,24 @@ def get_heartbeat() -> dict:
 
 
 def get_symbols() -> List[dict]:
-    """Get list of available MT5 symbols (read-only)."""
+    """Get list of available MT5 symbols (read-only).
+
+    When connected to real MT5, returns ALL symbols from the terminal.
+    Falls back to configured symbols if MT5 discovery fails.
+    """
     mgr, is_real = _safe_get_manager()
 
     if not mgr.health.is_connected:
         return []
 
+    # Try MT5 terminal symbol discovery first
+    if is_real:
+        all_symbols = mgr.symbols_get()
+        if all_symbols:
+            logger.debug("MT5_SYMBOL_REFRESH: %d symbols from terminal", len(all_symbols))
+            return all_symbols
+
+    # Fallback: look up configured symbols
     symbols = []
     for sym in Config.SYMBOLS:
         info = mgr.symbol_info(sym)

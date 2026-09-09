@@ -1,23 +1,31 @@
-"""Trading engine that coordinates AI decisions, risk checks, and order execution."""
+"""Trading engine that coordinates AI decisions, risk checks, and order execution.
+
+Supports both PaperBroker and MT5DemoBroker through duck typing —
+any broker implementing execute_buy() and execute_sell() with the
+correct signatures is accepted.
+"""
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from src.portfolio.portfolio import Portfolio
 from src.risk.manager import RiskManager
-from src.trading.paper.broker import PaperBroker
-from src.trading.orders import Order
 
 logger = logging.getLogger(__name__)
 
 
 class TradingEngine:
-    """Orchestrates trade execution for a single AI portfolio."""
+    """Orchestrates trade execution for a single AI portfolio.
+
+    Accepts any broker implementing:
+      - execute_buy(portfolio, symbol, price, quantity, stop_loss, take_profit, timestamp, candle_timestamp)
+      - execute_sell(portfolio, symbol, price, timestamp, candle_timestamp)
+    """
 
     def __init__(
         self,
         portfolio: Portfolio,
         risk_manager: RiskManager,
-        broker: PaperBroker,
+        broker: object,  # PaperBroker or MT5DemoBroker
     ):
         self.portfolio = portfolio
         self.risk_manager = risk_manager
@@ -33,6 +41,7 @@ class TradingEngine:
         stop_loss: Optional[float] = None,
         take_profit: Optional[float] = None,
         timestamp: Optional[str] = None,
+        candle_timestamp: Optional[str] = None,
     ) -> Optional[dict]:
         """Process an AI decision through risk checks and execute if allowed.
 
@@ -71,6 +80,7 @@ class TradingEngine:
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 timestamp=timestamp,
+                candle_timestamp=candle_timestamp,
             )
         elif decision == "SELL":
             return self.broker.execute_sell(
@@ -78,5 +88,6 @@ class TradingEngine:
                 symbol=symbol,
                 price=price,
                 timestamp=timestamp,
+                candle_timestamp=candle_timestamp,
             )
         return None

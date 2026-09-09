@@ -255,6 +255,16 @@ class MockMT5ConnectionManager:
     ) -> Optional[float]:
         return volume * price * 0.01  # 1% margin
 
+    def orders_get(self, symbol: Optional[str] = None, group: Optional[str] = None) -> List[dict]:
+        """Get pending orders (mock returns empty)."""
+        return []
+
+    def symbols_get(self, group: Optional[str] = None) -> List[dict]:
+        """Get all available symbols (mock returns configured symbols)."""
+        if not self._connected:
+            return []
+        return list(self._symbols.values())
+
 
 class MockMT5MarketData:
     """Mock market data for testing."""

@@ -25,7 +25,8 @@ class MainActivity : ComponentActivity() {
                 AshtradingAINavigation(
                     uiState = uiState,
                     onAskAI = viewModel::askAIResearch,
-                    onRefresh = viewModel::refreshAll
+                    onRefresh = viewModel::refreshAll,
+                    viewModel = viewModel
                 )
             }
         }

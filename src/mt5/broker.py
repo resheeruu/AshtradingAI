@@ -588,9 +588,12 @@ class MT5DemoBroker:
     def reconcile(self) -> List[dict]:
         """Reconcile broker state with actual MT5 positions after restart.
 
-        Checks pending orders and updates their status. Does NOT re-execute
-        any orders — only updates status of existing ones.
+        Checks:
+        1. Pending orders → update status (filled, closed_external, unknown)
+        2. Open positions → verify they match portfolio state
+        3. P/L → log actual MT5 P/L vs expected
 
+        Does NOT re-execute any orders — only updates status.
         Returns list of reconciliation results.
         """
         if not self._db or not self._session_id:
@@ -598,31 +601,57 @@ class MT5DemoBroker:
 
         results = []
         try:
+            # 1. Reconcile pending orders
             pending = self._db.get_pending_mt5_orders(self._session_id)
             for order_row in pending:
                 mt5_ticket = order_row.get("mt5_ticket", 0)
                 if not mt5_ticket:
-                    # No ticket to check — mark as unknown
                     self._db.update_mt5_order(order_row["id"], status="unknown")
-                    results.append({"order_id": order_row["id"], "status": "unknown"})
+                    results.append({"type": "order", "order_id": order_row["id"], "status": "unknown"})
                     continue
 
-                # Check if position still exists in MT5
                 positions = self.connection.positions_get(
                     symbol=order_row.get("mt5_symbol", "")
                 )
                 found = any(p["ticket"] == mt5_ticket for p in positions)
 
                 if found:
-                    # Position still open — order was filled
                     self._db.update_mt5_order(order_row["id"], status="filled")
-                    results.append({"order_id": order_row["id"], "status": "filled"})
+                    results.append({"type": "order", "order_id": order_row["id"], "status": "filled"})
                 else:
-                    # Position closed — might have been closed by another EA or manually
                     self._db.update_mt5_order(order_row["id"], status="closed_external")
-                    results.append({"order_id": order_row["id"], "status": "closed_external"})
+                    results.append({"type": "order", "order_id": order_row["id"], "status": "closed_external"})
+
+            # 2. Reconcile open positions — log actual MT5 P/L
+            all_positions = self.connection.positions_get()
+            our_positions = [p for p in all_positions if p.get("magic") == self.magic_number]
+            total_unrealized_pnl = sum(p.get("profit", 0.0) for p in our_positions)
+
+            results.append({
+                "type": "positions",
+                "mt5_position_count": len(our_positions),
+                "total_unrealized_pnl": round(total_unrealized_pnl, 4),
+                "positions": [
+                    {
+                        "ticket": p.get("ticket"),
+                        "symbol": p.get("symbol"),
+                        "side": "BUY" if p.get("type", 0) == 0 else "SELL",
+                        "volume": p.get("volume", 0.0),
+                        "entry_price": p.get("price_open", 0.0),
+                        "current_price": p.get("price_current", 0.0),
+                        "unrealized_pnl": p.get("profit", 0.0),
+                    }
+                    for p in our_positions
+                ],
+            })
+
+            logger.info(
+                "RECONCILIATION: %d pending orders checked, %d open positions, P/L=%.4f",
+                len(pending), len(our_positions), total_unrealized_pnl,
+            )
 
         except Exception as e:
             logger.error("Reconciliation failed: %s", e)
+            results.append({"type": "error", "message": str(e)})
 
         return results
