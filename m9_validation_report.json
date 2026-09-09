@@ -1,0 +1,214 @@
+{
+  "timestamp": "2026-09-06T03:39:40.229264+00:00",
+  "data_quality": {
+    "BTC/USDT": {
+      "candle_count": 1000,
+      "first_candle": "2026-07-26T12:00:00+00:00",
+      "last_candle": "2026-09-06T03:00:00+00:00",
+      "price_range": {
+        "low": 62271.43,
+        "high": 82319.14
+      }
+    },
+    "ETH/USDT": {
+      "candle_count": 1000,
+      "first_candle": "2026-07-26T12:00:00+00:00",
+      "last_candle": "2026-09-06T03:00:00+00:00",
+      "price_range": {
+        "low": 1822.28,
+        "high": 2565.05
+      }
+    }
+  },
+  "m7_results": {
+    "standard": {
+      "starting_balance": 10000.0,
+      "ending_balance": 10000.0,
+      "net_profit": 0.0,
+      "return_pct": 0.0,
+      "num_trades": 0,
+      "winning_trades": 0,
+      "losing_trades": 0,
+      "win_rate": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "sortino_ratio": 0.0,
+      "fees_paid": 0,
+      "largest_win": 0.0,
+      "largest_loss": 0.0,
+      "long_trades": 0,
+      "short_trades": 0
+    },
+    "filter_stats": {
+      "total_evaluations": 0,
+      "pass_counts": {},
+      "fail_counts": {},
+      "top_fail_reasons": []
+    },
+    "state_stats": {
+      "total_candles": 1996,
+      "setups_detected": 367,
+      "entries_triggered": 0,
+      "window_expired": 0,
+      "invalidations": 0,
+      "transitions": {
+        "SCANNING \u2192 ARMED": 367,
+        "ARMED \u2192 SCANNING": 367
+      }
+    },
+    "ai_stats": {
+      "total_signals": 0,
+      "ai_approved": 0,
+      "ai_rejected": 0,
+      "ai_hold": 0,
+      "ai_errors": 0,
+      "approval_rate": 0.0,
+      "avg_confidence": 0.0
+    },
+    "per_symbol": {
+      "BTC/USDT": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "net_pnl": 0
+      },
+      "ETH/USDT": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "net_pnl": 0
+      }
+    }
+  },
+  "baseline_results": {
+    "BuyAndHold": {
+      "starting_balance": 10000.0,
+      "ending_balance": 10222.67,
+      "net_profit": 222.67,
+      "return_pct": 0.0223,
+      "num_trades": 1,
+      "winning_trades": 1,
+      "losing_trades": 0,
+      "win_rate": 1.0,
+      "avg_win": 223.6689,
+      "avg_loss": 0.0,
+      "profit_factor": Infinity,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "sortino_ratio": 0.0,
+      "fees_paid": 1.2254,
+      "largest_win": 223.6689,
+      "largest_loss": 0.0,
+      "long_trades": 1,
+      "short_trades": 0
+    },
+    "SMACrossover": {
+      "starting_balance": 10000.0,
+      "ending_balance": 10520.85,
+      "net_profit": 520.85,
+      "return_pct": 0.0521,
+      "num_trades": 2,
+      "winning_trades": 2,
+      "losing_trades": 0,
+      "win_rate": 1.0,
+      "avg_win": 261.3744,
+      "avg_loss": 0.0,
+      "profit_factor": Infinity,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "sortino_ratio": 0.0,
+      "fees_paid": 2.426,
+      "largest_win": 309.0813,
+      "largest_loss": 0.0,
+      "long_trades": 2,
+      "short_trades": 0
+    },
+    "RSIMeanReversion": {
+      "starting_balance": 10000.0,
+      "ending_balance": 10550.92,
+      "net_profit": 550.92,
+      "return_pct": 0.0551,
+      "num_trades": 2,
+      "winning_trades": 2,
+      "losing_trades": 0,
+      "win_rate": 1.0,
+      "avg_win": 276.4096,
+      "avg_loss": 0.0,
+      "profit_factor": Infinity,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "sortino_ratio": 0.0,
+      "fees_paid": 2.4561,
+      "largest_win": 300.8917,
+      "largest_loss": 0.0,
+      "long_trades": 2,
+      "short_trades": 0
+    }
+  },
+  "robustness": {
+    "walk_forward": {
+      "num_windows": 3,
+      "mean_oos_return": 0.0,
+      "oos_positive_pct": 0.0,
+      "mean_is_return": 0.0,
+      "windows": [
+        {
+          "id": 0,
+          "is_return": 0.0,
+          "oos_return": 0.0,
+          "is_dd": 0.0,
+          "oos_dd": 0.0
+        },
+        {
+          "id": 1,
+          "is_return": 0.0,
+          "oos_return": 0.0,
+          "is_dd": 0.0,
+          "oos_dd": 0.0
+        },
+        {
+          "id": 2,
+          "is_return": 0.0,
+          "oos_return": 0.0,
+          "is_dd": 0.0,
+          "oos_dd": 0.0
+        }
+      ]
+    },
+    "sensitivity": {
+      "param": "risk_percent",
+      "base_value": 0.01,
+      "tested_values": [
+        0.005,
+        0.0075,
+        0.01,
+        0.0125,
+        0.015
+      ],
+      "returns": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "return_std": 0.0,
+      "stable": true
+    },
+    "monte_carlo": {
+      "n_simulations": 0,
+      "median_return": 0.0,
+      "percentile_5_return": 0.0,
+      "percentile_95_return": 0.0,
+      "probability_of_loss": 0.0,
+      "worst_drawdown": 0.0,
+      "median_drawdown": 0.0,
+      "mean_return": 0.0
+    },
+    "robustness_score": 0.1
+  },
+  "verdict": "INSUFFICIENT DATA - fewer than 10 trades"
+}

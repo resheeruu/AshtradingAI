@@ -1,0 +1,913 @@
+{
+  "timestamp": "2026-09-08T17:59:26.725445+00:00",
+  "git_commit": "05780ac",
+  "executive_summary": {
+    "primary_bottleneck": "DIRECTION_INSTABILITY + PULLBACK_BOTTLENECK",
+    "production_m7_changed": false,
+    "edge_established": false,
+    "root_causes": [
+      "PULLBACK_BOTTLENECK"
+    ]
+  },
+  "reproducibility": {
+    "data_source": "Coins.ph REST API (public market data)",
+    "symbols": [
+      "BTC/USDT",
+      "ETH/USDT"
+    ],
+    "timeframe": "1h",
+    "candle_count": 1000,
+    "date_range": {
+      "start": "2026-07-29T02:00:00",
+      "end": "2026-09-08T17:00:00"
+    },
+    "m10_vs_m11_discrepancy": {
+      "BTC/USDT": {
+        "m10": {
+          "total_directions": 956,
+          "changes": 511,
+          "change_rate": 0.5345,
+          "long_pct": 50.8
+        },
+        "m11": {
+          "total_directions": 438,
+          "changes": 168,
+          "change_rate": 0.3836,
+          "long_pct": 51.6
+        }
+      },
+      "ETH/USDT": {
+        "m10": {
+          "total_directions": 959,
+          "changes": 519,
+          "change_rate": 0.5412,
+          "long_pct": 51.5
+        },
+        "m11": {
+          "total_directions": 435,
+          "changes": 166,
+          "change_rate": 0.3816,
+          "long_pct": 52.4
+        }
+      }
+    }
+  },
+  "discrepancy_analysis": {
+    "m10_direction_rate_btc": 0.5345,
+    "m11_direction_rate_btc": 0.3836,
+    "root_cause": "M10 and M11 use different direction detection algorithms. M10: simple 2-candle comparison. M11: N-candle majority-vote.",
+    "m10_pullback1_trades": 1,
+    "m11_pullback1_trades": 26,
+    "pullback1_discrepancy_cause": "M11 uses different direction detector (majority-vote) which produces more stable signals, allowing more setups to survive to pullback confirmation."
+  },
+  "m7_funnel": {
+    "production_pullback2_m10": {
+      "variant": "M7_production_pullback2",
+      "direction_detector": "m10",
+      "direction_window": 2,
+      "total_candles": 1994,
+      "funnel": {
+        "direction_detected": 1286,
+        "filters_passed": 367,
+        "armed": 367,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 366,
+        "invalidation_in_window": 0,
+        "filter_rejection": 919,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 688,
+        "short": 598
+      },
+      "timing": {
+        "avg_candles_to_invalidation": 1.77,
+        "median_candles_to_invalidation": 1.0,
+        "max_candles": 8
+      }
+    },
+    "production_pullback2_m11": {
+      "variant": "M7_m11detector_pullback2",
+      "direction_detector": "m11",
+      "direction_window": 2,
+      "total_candles": 1994,
+      "funnel": {
+        "direction_detected": 555,
+        "filters_passed": 144,
+        "armed": 144,
+        "pullback_reached": 3,
+        "window_open": 3,
+        "confirmed": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 141,
+        "invalidation_in_window": 2,
+        "filter_rejection": 411,
+        "breakout_expired": 1
+      },
+      "directions": {
+        "long": 289,
+        "short": 266
+      },
+      "timing": {
+        "avg_candles_to_invalidation": 5.01,
+        "median_candles_to_invalidation": 4.0,
+        "max_candles": 19
+      }
+    },
+    "pullback_variants": {
+      "0": {
+        "variant": "pb0",
+        "direction_detector": "m10",
+        "direction_window": 2,
+        "total_candles": 1994,
+        "funnel": {
+          "direction_detected": 1344,
+          "filters_passed": 386,
+          "armed": 386,
+          "pullback_reached": 162,
+          "window_open": 162,
+          "confirmed": 56,
+          "executed": 56
+        },
+        "failures": {
+          "invalidation_in_armed": 223,
+          "invalidation_in_window": 104,
+          "filter_rejection": 958,
+          "breakout_expired": 2
+        },
+        "directions": {
+          "long": 704,
+          "short": 640
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 1.41,
+          "median_candles_to_invalidation": 1,
+          "max_candles": 4
+        }
+      },
+      "1": {
+        "variant": "pb1",
+        "direction_detector": "m10",
+        "direction_window": 2,
+        "total_candles": 1994,
+        "funnel": {
+          "direction_detected": 1287,
+          "filters_passed": 367,
+          "armed": 367,
+          "pullback_reached": 4,
+          "window_open": 4,
+          "confirmed": 1,
+          "executed": 1
+        },
+        "failures": {
+          "invalidation_in_armed": 362,
+          "invalidation_in_window": 3,
+          "filter_rejection": 920,
+          "breakout_expired": 0
+        },
+        "directions": {
+          "long": 688,
+          "short": 599
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 1.76,
+          "median_candles_to_invalidation": 1,
+          "max_candles": 8
+        }
+      },
+      "2": {
+        "variant": "pb2",
+        "direction_detector": "m10",
+        "direction_window": 2,
+        "total_candles": 1994,
+        "funnel": {
+          "direction_detected": 1286,
+          "filters_passed": 367,
+          "armed": 367,
+          "pullback_reached": 0,
+          "window_open": 0,
+          "confirmed": 0,
+          "executed": 0
+        },
+        "failures": {
+          "invalidation_in_armed": 366,
+          "invalidation_in_window": 0,
+          "filter_rejection": 919,
+          "breakout_expired": 0
+        },
+        "directions": {
+          "long": 688,
+          "short": 598
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 1.77,
+          "median_candles_to_invalidation": 1.0,
+          "max_candles": 8
+        }
+      },
+      "3": {
+        "variant": "pb3",
+        "direction_detector": "m10",
+        "direction_window": 2,
+        "total_candles": 1994,
+        "funnel": {
+          "direction_detected": 1286,
+          "filters_passed": 367,
+          "armed": 367,
+          "pullback_reached": 0,
+          "window_open": 0,
+          "confirmed": 0,
+          "executed": 0
+        },
+        "failures": {
+          "invalidation_in_armed": 366,
+          "invalidation_in_window": 0,
+          "filter_rejection": 919,
+          "breakout_expired": 0
+        },
+        "directions": {
+          "long": 688,
+          "short": 598
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 1.77,
+          "median_candles_to_invalidation": 1.0,
+          "max_candles": 8
+        }
+      }
+    },
+    "direction_variants": {
+      "2": {
+        "variant": "dir2",
+        "direction_detector": "m11",
+        "direction_window": 2,
+        "total_candles": 1994,
+        "funnel": {
+          "direction_detected": 555,
+          "filters_passed": 144,
+          "armed": 144,
+          "pullback_reached": 3,
+          "window_open": 3,
+          "confirmed": 0,
+          "executed": 0
+        },
+        "failures": {
+          "invalidation_in_armed": 141,
+          "invalidation_in_window": 2,
+          "filter_rejection": 411,
+          "breakout_expired": 1
+        },
+        "directions": {
+          "long": 289,
+          "short": 266
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 5.01,
+          "median_candles_to_invalidation": 4.0,
+          "max_candles": 19
+        }
+      },
+      "3": {
+        "variant": "dir3",
+        "direction_detector": "m11",
+        "direction_window": 3,
+        "total_candles": 1992,
+        "funnel": {
+          "direction_detected": 886,
+          "filters_passed": 178,
+          "armed": 178,
+          "pullback_reached": 0,
+          "window_open": 0,
+          "confirmed": 0,
+          "executed": 0
+        },
+        "failures": {
+          "invalidation_in_armed": 178,
+          "invalidation_in_window": 0,
+          "filter_rejection": 708,
+          "breakout_expired": 0
+        },
+        "directions": {
+          "long": 432,
+          "short": 454
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 4.02,
+          "median_candles_to_invalidation": 3.0,
+          "max_candles": 19
+        }
+      },
+      "4": {
+        "variant": "dir4",
+        "direction_detector": "m11",
+        "direction_window": 4,
+        "total_candles": 1990,
+        "funnel": {
+          "direction_detected": 606,
+          "filters_passed": 122,
+          "armed": 122,
+          "pullback_reached": 44,
+          "window_open": 44,
+          "confirmed": 19,
+          "executed": 19
+        },
+        "failures": {
+          "invalidation_in_armed": 78,
+          "invalidation_in_window": 15,
+          "filter_rejection": 484,
+          "breakout_expired": 8
+        },
+        "directions": {
+          "long": 303,
+          "short": 303
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 5.96,
+          "median_candles_to_invalidation": 5,
+          "max_candles": 20
+        }
+      },
+      "5": {
+        "variant": "dir5",
+        "direction_detector": "m11",
+        "direction_window": 5,
+        "total_candles": 1988,
+        "funnel": {
+          "direction_detected": 883,
+          "filters_passed": 147,
+          "armed": 147,
+          "pullback_reached": 46,
+          "window_open": 46,
+          "confirmed": 15,
+          "executed": 15
+        },
+        "failures": {
+          "invalidation_in_armed": 101,
+          "invalidation_in_window": 25,
+          "filter_rejection": 736,
+          "breakout_expired": 4
+        },
+        "directions": {
+          "long": 429,
+          "short": 454
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 4.98,
+          "median_candles_to_invalidation": 4.0,
+          "max_candles": 18
+        }
+      },
+      "6": {
+        "variant": "dir6",
+        "direction_detector": "m11",
+        "direction_window": 6,
+        "total_candles": 1986,
+        "funnel": {
+          "direction_detected": 630,
+          "filters_passed": 105,
+          "armed": 105,
+          "pullback_reached": 72,
+          "window_open": 72,
+          "confirmed": 25,
+          "executed": 25
+        },
+        "failures": {
+          "invalidation_in_armed": 33,
+          "invalidation_in_window": 37,
+          "filter_rejection": 525,
+          "breakout_expired": 8
+        },
+        "directions": {
+          "long": 300,
+          "short": 330
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 6.94,
+          "median_candles_to_invalidation": 6.0,
+          "max_candles": 20
+        }
+      },
+      "8": {
+        "variant": "dir8",
+        "direction_detector": "m11",
+        "direction_window": 8,
+        "total_candles": 1982,
+        "funnel": {
+          "direction_detected": 628,
+          "filters_passed": 91,
+          "armed": 91,
+          "pullback_reached": 78,
+          "window_open": 78,
+          "confirmed": 27,
+          "executed": 27
+        },
+        "failures": {
+          "invalidation_in_armed": 13,
+          "invalidation_in_window": 26,
+          "filter_rejection": 537,
+          "breakout_expired": 23
+        },
+        "directions": {
+          "long": 311,
+          "short": 317
+        },
+        "timing": {
+          "avg_candles_to_invalidation": 8.16,
+          "median_candles_to_invalidation": 7.5,
+          "max_candles": 20
+        }
+      }
+    }
+  },
+  "direction_stability": {
+    "BTC/USDT": {
+      "2_candle": {
+        "total_directions": 438,
+        "changes": 168,
+        "change_rate": 0.3836,
+        "long_pct": 51.6,
+        "short_pct": 48.4,
+        "median_run_length": 2,
+        "mean_run_length": 2.59,
+        "max_run_length": 10,
+        "p90_run_length": 5
+      },
+      "3_candle": {
+        "total_directions": 721,
+        "changes": 202,
+        "change_rate": 0.2802,
+        "long_pct": 51.0,
+        "short_pct": 49.0,
+        "median_run_length": 3,
+        "mean_run_length": 3.55,
+        "max_run_length": 13,
+        "p90_run_length": 7
+      },
+      "4_candle": {
+        "total_directions": 497,
+        "changes": 115,
+        "change_rate": 0.2314,
+        "long_pct": 52.3,
+        "short_pct": 47.7,
+        "median_run_length": 4.0,
+        "mean_run_length": 4.28,
+        "max_run_length": 16,
+        "p90_run_length": 7
+      },
+      "5_candle": {
+        "total_directions": 734,
+        "changes": 143,
+        "change_rate": 0.1948,
+        "long_pct": 51.6,
+        "short_pct": 48.4,
+        "median_run_length": 5.0,
+        "mean_run_length": 5.1,
+        "max_run_length": 19,
+        "p90_run_length": 9
+      },
+      "6_candle": {
+        "total_directions": 521,
+        "changes": 87,
+        "change_rate": 0.167,
+        "long_pct": 50.5,
+        "short_pct": 49.5,
+        "median_run_length": 5.0,
+        "mean_run_length": 5.92,
+        "max_run_length": 37,
+        "p90_run_length": 9
+      },
+      "8_candle": {
+        "total_directions": 528,
+        "changes": 69,
+        "change_rate": 0.1307,
+        "long_pct": 51.5,
+        "short_pct": 48.5,
+        "median_run_length": 6.0,
+        "mean_run_length": 7.54,
+        "max_run_length": 42,
+        "p90_run_length": 13
+      }
+    },
+    "ETH/USDT": {
+      "2_candle": {
+        "total_directions": 435,
+        "changes": 166,
+        "change_rate": 0.3816,
+        "long_pct": 52.4,
+        "short_pct": 47.6,
+        "median_run_length": 2,
+        "mean_run_length": 2.6,
+        "max_run_length": 11,
+        "p90_run_length": 5
+      },
+      "3_candle": {
+        "total_directions": 684,
+        "changes": 212,
+        "change_rate": 0.3099,
+        "long_pct": 52.6,
+        "short_pct": 47.4,
+        "median_run_length": 3,
+        "mean_run_length": 3.21,
+        "max_run_length": 15,
+        "p90_run_length": 6
+      },
+      "4_candle": {
+        "total_directions": 463,
+        "changes": 103,
+        "change_rate": 0.2225,
+        "long_pct": 55.7,
+        "short_pct": 44.3,
+        "median_run_length": 4.0,
+        "mean_run_length": 4.45,
+        "max_run_length": 16,
+        "p90_run_length": 8
+      },
+      "5_candle": {
+        "total_directions": 717,
+        "changes": 141,
+        "change_rate": 0.1967,
+        "long_pct": 54.5,
+        "short_pct": 45.5,
+        "median_run_length": 4.0,
+        "mean_run_length": 5.05,
+        "max_run_length": 23,
+        "p90_run_length": 10
+      },
+      "6_candle": {
+        "total_directions": 496,
+        "changes": 81,
+        "change_rate": 0.1633,
+        "long_pct": 54.8,
+        "short_pct": 45.2,
+        "median_run_length": 5.0,
+        "mean_run_length": 6.05,
+        "max_run_length": 24,
+        "p90_run_length": 11
+      },
+      "8_candle": {
+        "total_directions": 521,
+        "changes": 67,
+        "change_rate": 0.1286,
+        "long_pct": 55.5,
+        "short_pct": 44.5,
+        "median_run_length": 7.0,
+        "mean_run_length": 7.66,
+        "max_run_length": 28,
+        "p90_run_length": 17
+      }
+    }
+  },
+  "counterfactual_analysis": {
+    "BTC/USDT": {
+      "total_invalidated": 183,
+      "classifications": {
+        "F_profitable": 87,
+        "G_losing": 96,
+        "unknown": 0
+      },
+      "pct_profitable": 47.5,
+      "pct_losing": 52.5
+    },
+    "ETH/USDT": {
+      "total_invalidated": 183,
+      "classifications": {
+        "F_profitable": 89,
+        "G_losing": 94,
+        "unknown": 0
+      },
+      "pct_profitable": 48.6,
+      "pct_losing": 51.4
+    }
+  },
+  "pullback_analysis": {
+    "BTC/USDT": {
+      "total_armed": 183,
+      "avg_counter_trend": 0.99,
+      "avg_max_consecutive": 0.98,
+      "avg_candles_survived": 1.84,
+      "median_candles_survived": 1
+    },
+    "ETH/USDT": {
+      "total_armed": 183,
+      "avg_counter_trend": 0.91,
+      "avg_max_consecutive": 0.91,
+      "avg_candles_survived": 1.7,
+      "median_candles_survived": 1
+    },
+    "pullback_target_comparison": {
+      "pullback_0": {
+        "armed": 386,
+        "pullback_reached": 162,
+        "window_open": 162,
+        "confirmed": 56,
+        "executed": 56,
+        "invalidation_in_armed": 223
+      },
+      "pullback_1": {
+        "armed": 367,
+        "pullback_reached": 4,
+        "window_open": 4,
+        "confirmed": 1,
+        "executed": 1,
+        "invalidation_in_armed": 362
+      },
+      "pullback_2": {
+        "armed": 367,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0,
+        "invalidation_in_armed": 366
+      },
+      "pullback_3": {
+        "armed": 367,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0,
+        "invalidation_in_armed": 366
+      }
+    }
+  },
+  "filter_ablation": {
+    "baseline": {
+      "filters_passed": 367,
+      "armed": 367,
+      "filter_rejection": 919
+    },
+    "no_ATR": {
+      "filters_passed": 367,
+      "armed": 367,
+      "filter_rejection": 919,
+      "pullback_reached": 0,
+      "confirmed": 0,
+      "executed": 0
+    },
+    "no_EMA_Angle": {
+      "filters_passed": 398,
+      "armed": 398,
+      "filter_rejection": 826,
+      "pullback_reached": 0,
+      "confirmed": 0,
+      "executed": 0
+    },
+    "no_Price_EMA": {
+      "filters_passed": 367,
+      "armed": 367,
+      "filter_rejection": 919,
+      "pullback_reached": 0,
+      "confirmed": 0,
+      "executed": 0
+    },
+    "no_Candle": {
+      "filters_passed": 367,
+      "armed": 367,
+      "filter_rejection": 919,
+      "pullback_reached": 0,
+      "confirmed": 0,
+      "executed": 0
+    },
+    "no_EMA_Order": {
+      "filters_passed": 506,
+      "armed": 506,
+      "filter_rejection": 525,
+      "pullback_reached": 0,
+      "confirmed": 0,
+      "executed": 0
+    },
+    "no_Session": {
+      "filters_passed": 367,
+      "armed": 367,
+      "filter_rejection": 919,
+      "pullback_reached": 0,
+      "confirmed": 0,
+      "executed": 0
+    }
+  },
+  "timeframe_analysis": {
+    "15m": {
+      "candle_count": 1000,
+      "funnel": {
+        "direction_detected": 1207,
+        "filters_passed": 347,
+        "armed": 347,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 347,
+        "invalidation_in_window": 0,
+        "filter_rejection": 860,
+        "breakout_expired": 0
+      },
+      "timing": {
+        "avg_candles_to_invalidation": 1.85,
+        "median_candles_to_invalidation": 1,
+        "max_candles": 8
+      },
+      "direction_stability": {
+        "BTC/USDT": {
+          "total_directions": 900,
+          "changes": 478,
+          "change_rate": 0.5311
+        },
+        "ETH/USDT": {
+          "total_directions": 906,
+          "changes": 474,
+          "change_rate": 0.5232
+        }
+      }
+    },
+    "1h": {
+      "candle_count": 1000,
+      "funnel": {
+        "direction_detected": 1286,
+        "filters_passed": 367,
+        "armed": 367,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 366,
+        "invalidation_in_window": 0,
+        "filter_rejection": 919,
+        "breakout_expired": 0
+      },
+      "timing": {
+        "avg_candles_to_invalidation": 1.77,
+        "median_candles_to_invalidation": 1.0,
+        "max_candles": 8
+      },
+      "direction_stability": {
+        "BTC/USDT": {
+          "total_directions": 956,
+          "changes": 511,
+          "change_rate": 0.5345
+        },
+        "ETH/USDT": {
+          "total_directions": 959,
+          "changes": 519,
+          "change_rate": 0.5412
+        }
+      }
+    },
+    "4h": {
+      "candle_count": 1000,
+      "funnel": {
+        "direction_detected": 1266,
+        "filters_passed": 384,
+        "armed": 384,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 383,
+        "invalidation_in_window": 0,
+        "filter_rejection": 882,
+        "breakout_expired": 0
+      },
+      "timing": {
+        "avg_candles_to_invalidation": 1.82,
+        "median_candles_to_invalidation": 1,
+        "max_candles": 9
+      },
+      "direction_stability": {
+        "BTC/USDT": {
+          "total_directions": 972,
+          "changes": 551,
+          "change_rate": 0.5669
+        },
+        "ETH/USDT": {
+          "total_directions": 975,
+          "changes": 548,
+          "change_rate": 0.5621
+        }
+      }
+    },
+    "1d": {
+      "candle_count": 1000,
+      "funnel": {
+        "direction_detected": 1228,
+        "filters_passed": 358,
+        "armed": 358,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 358,
+        "invalidation_in_window": 0,
+        "filter_rejection": 870,
+        "breakout_expired": 0
+      },
+      "timing": {
+        "avg_candles_to_invalidation": 2.03,
+        "median_candles_to_invalidation": 2.0,
+        "max_candles": 9
+      },
+      "direction_stability": {
+        "BTC/USDT": {
+          "total_directions": 966,
+          "changes": 497,
+          "change_rate": 0.5145
+        },
+        "ETH/USDT": {
+          "total_directions": 969,
+          "changes": 493,
+          "change_rate": 0.5088
+        }
+      }
+    }
+  },
+  "execution_audit": {
+    "findings": [
+      {
+        "check": "completed_candle_usage",
+        "result": "PASS",
+        "detail": "StrategyEngine.process_candle uses candles[:-1] as completed candles. candles[-1] is never used for signals."
+      },
+      {
+        "check": "lookahead_audit",
+        "result": "PASS",
+        "detail": "No lookahead: direction uses only completed[-1] and completed[-2]. Pullback uses completed[-target-1:-1]. Breakout uses completed[-1]."
+      },
+      {
+        "check": "same_candle_conflict",
+        "result": "PASS",
+        "detail": "A candle cannot be both bullish and bearish. LONG requires close>open AND close>prev_close. SHORT requires close<open AND close<prev_close."
+      },
+      {
+        "check": "state_machine_single_path",
+        "result": "PASS",
+        "detail": "Phase-based dispatch: SCANNING -> ARMED -> WINDOW_OPEN -> ENTRY. Only one branch per candle."
+      },
+      {
+        "check": "candle_deduplication",
+        "result": "PASS",
+        "detail": "last_processed_candle tracks timestamp to prevent double-processing."
+      },
+      {
+        "check": "atr_calculation",
+        "result": "PASS",
+        "detail": "ATR uses Wilder smoothing on historical data. No future data used."
+      },
+      {
+        "check": "ema_calculation",
+        "result": "PASS",
+        "detail": "EMA uses standard recursive formula. No future data used."
+      }
+    ],
+    "all_pass": true
+  },
+  "statistical_labels": {
+    "pullback_0": "VALID",
+    "pullback_1": "INSUFFICIENT SAMPLE",
+    "pullback_2": "NOT APPLICABLE",
+    "pullback_3": "NOT APPLICABLE"
+  },
+  "root_causes": [
+    {
+      "cause": "FILTER_CASCADE",
+      "severity": "MEDIUM",
+      "detail": "Filter cascade rejects 71.5% of direction signals (919/1286)."
+    },
+    {
+      "cause": "PULLBACK_BOTTLENECK",
+      "severity": "HIGH",
+      "detail": "All 367 armed setups invalidated before pullback. Median survival: 1.0 candles."
+    },
+    {
+      "cause": "PULLBACK_REMOVAL_PRODUCES_TRADES",
+      "severity": "INFO",
+      "detail": "pullback=0 produces 56 trades but these may be noise. pullback=2 produces 0. The pullback requirement is the primary bottleneck."
+    },
+    {
+      "cause": "M10_VS_M11_DISCREPANCY_EXPLAINED",
+      "severity": "INFO",
+      "detail": "M10 uses simple 2-candle comparison (close vs open AND vs prev_close): 53.4% change rate. M11 uses N-candle majority-vote (bullish_count > threshold AND first<last close): 38.4% change rate. Different algorithms produce different signals. M10 detects more direction changes because it requires less evidence per signal. M11 filters noise but also filters legitimate signals."
+    }
+  ],
+  "safety_audit": {
+    "LIVE_TRADING": "false",
+    "MT5_DEMO_ONLY": "true",
+    "MT5_DEMO_TRADING_ENABLED": "false",
+    "no_api_keys": true,
+    "no_order_endpoints": true,
+    "coinsph_market_data_only": true,
+    "production_m7_changed": false
+  }
+}

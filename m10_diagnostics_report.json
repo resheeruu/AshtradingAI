@@ -1,0 +1,433 @@
+{
+  "timestamp": "2026-09-06T04:03:54.424825+00:00",
+  "bug_audit": {
+    "candle_indexing": {
+      "issues_found": 0,
+      "issues": []
+    },
+    "same_candle_conflicts": {
+      "conflicts": 0,
+      "examples": []
+    }
+  },
+  "direction_stability": {
+    "BTC/USDT": {
+      "symbol": "BTC/USDT",
+      "timeframe": "1h",
+      "total_directions": 957,
+      "direction_changes": 531,
+      "change_rate": 0.5549,
+      "longest_streak": 8,
+      "long_pct": 50.9,
+      "short_pct": 49.1
+    },
+    "ETH/USDT": {
+      "symbol": "ETH/USDT",
+      "timeframe": "1h",
+      "total_directions": 962,
+      "direction_changes": 546,
+      "change_rate": 0.5676,
+      "longest_streak": 8,
+      "long_pct": 51.9,
+      "short_pct": 48.1
+    }
+  },
+  "invalidation_patterns": {
+    "BTC/USDT": {
+      "symbol": "BTC/USDT",
+      "total_invalidations": 496,
+      "within_1_candle": 496,
+      "within_2_candles": 496,
+      "within_3_candles": 496,
+      "pct_within_1": 100.0,
+      "direction_at_invalidation": {
+        "LONG": 246,
+        "SHORT": 250
+      }
+    },
+    "ETH/USDT": {
+      "symbol": "ETH/USDT",
+      "total_invalidations": 513,
+      "within_1_candle": 513,
+      "within_2_candles": 513,
+      "within_3_candles": 513,
+      "pct_within_1": 100.0,
+      "direction_at_invalidation": {
+        "LONG": 258,
+        "SHORT": 255
+      }
+    }
+  },
+  "variant_results": [
+    {
+      "variant": "Current M7 (pullback=2)",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 1301,
+        "filters_passed": 369,
+        "armed": 369,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "ai_confirmed": 0,
+        "risk_approved": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 367,
+        "invalidation_in_window": 0,
+        "pullback_timeout": 0,
+        "filter_rejection": 932,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 693,
+        "short": 608
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.72,
+        "median_candles_before_invalidation": 1,
+        "max_candles_before_invalidation": 8
+      },
+      "survival_by_candle": {
+        "1": 219,
+        "2": 78,
+        "3": 43,
+        "4": 15,
+        "5": 8,
+        "6": 2,
+        "8": 2
+      }
+    },
+    {
+      "variant": "Moderate relaxed (pullback=1)",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 1302,
+        "filters_passed": 369,
+        "armed": 369,
+        "pullback_reached": 4,
+        "window_open": 4,
+        "confirmed": 1,
+        "ai_confirmed": 1,
+        "risk_approved": 1,
+        "executed": 1
+      },
+      "failures": {
+        "invalidation_in_armed": 363,
+        "invalidation_in_window": 3,
+        "pullback_timeout": 0,
+        "filter_rejection": 933,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 693,
+        "short": 609
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.71,
+        "median_candles_before_invalidation": 1.0,
+        "max_candles_before_invalidation": 8
+      },
+      "survival_by_candle": {
+        "1": 219,
+        "2": 78,
+        "3": 43,
+        "4": 15,
+        "5": 7,
+        "6": 2,
+        "8": 2
+      }
+    },
+    {
+      "variant": "Aggressive relaxed (pullback=0)",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 1353,
+        "filters_passed": 388,
+        "armed": 388,
+        "pullback_reached": 156,
+        "window_open": 156,
+        "confirmed": 50,
+        "ai_confirmed": 50,
+        "risk_approved": 50,
+        "executed": 50
+      },
+      "failures": {
+        "invalidation_in_armed": 230,
+        "invalidation_in_window": 104,
+        "pullback_timeout": 0,
+        "filter_rejection": 965,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 2
+      },
+      "directions": {
+        "long": 705,
+        "short": 648
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.4,
+        "median_candles_before_invalidation": 1.0,
+        "max_candles_before_invalidation": 4
+      },
+      "survival_by_candle": {
+        "1": 230,
+        "2": 83,
+        "3": 19,
+        "4": 2
+      }
+    },
+    {
+      "variant": "Pullback disabled",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 1353,
+        "filters_passed": 388,
+        "armed": 388,
+        "pullback_reached": 156,
+        "window_open": 156,
+        "confirmed": 50,
+        "ai_confirmed": 50,
+        "risk_approved": 50,
+        "executed": 50
+      },
+      "failures": {
+        "invalidation_in_armed": 230,
+        "invalidation_in_window": 104,
+        "pullback_timeout": 0,
+        "filter_rejection": 965,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 2
+      },
+      "directions": {
+        "long": 705,
+        "short": 648
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.4,
+        "median_candles_before_invalidation": 1.0,
+        "max_candles_before_invalidation": 4
+      },
+      "survival_by_candle": {
+        "1": 230,
+        "2": 83,
+        "3": 19,
+        "4": 2
+      }
+    }
+  ],
+  "timeframe_results": {
+    "15m": {
+      "variant": "M7_15m",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 586,
+        "filters_passed": 183,
+        "armed": 183,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "ai_confirmed": 0,
+        "risk_approved": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 183,
+        "invalidation_in_window": 0,
+        "pullback_timeout": 0,
+        "filter_rejection": 403,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 309,
+        "short": 277
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.83,
+        "median_candles_before_invalidation": 1,
+        "max_candles_before_invalidation": 8
+      },
+      "survival_by_candle": {
+        "1": 99,
+        "2": 49,
+        "3": 19,
+        "4": 9,
+        "5": 3,
+        "6": 1,
+        "7": 1,
+        "8": 2
+      }
+    },
+    "1h": {
+      "variant": "M7_1h",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 655,
+        "filters_passed": 178,
+        "armed": 178,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "ai_confirmed": 0,
+        "risk_approved": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 176,
+        "invalidation_in_window": 0,
+        "pullback_timeout": 0,
+        "filter_rejection": 477,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 363,
+        "short": 292
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.79,
+        "median_candles_before_invalidation": 1.0,
+        "max_candles_before_invalidation": 8
+      },
+      "survival_by_candle": {
+        "1": 104,
+        "2": 33,
+        "3": 24,
+        "4": 9,
+        "5": 3,
+        "6": 1,
+        "8": 2
+      }
+    },
+    "4h": {
+      "variant": "M7_4h",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 636,
+        "filters_passed": 186,
+        "armed": 186,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "ai_confirmed": 0,
+        "risk_approved": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 184,
+        "invalidation_in_window": 0,
+        "pullback_timeout": 0,
+        "filter_rejection": 450,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 331,
+        "short": 305
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 1.85,
+        "median_candles_before_invalidation": 1.0,
+        "max_candles_before_invalidation": 9
+      },
+      "survival_by_candle": {
+        "1": 94,
+        "2": 51,
+        "3": 27,
+        "4": 6,
+        "5": 3,
+        "7": 1,
+        "8": 1,
+        "9": 1
+      }
+    },
+    "1d": {
+      "variant": "M7_1d",
+      "total_candles": 0,
+      "funnel": {
+        "direction_detected": 631,
+        "filters_passed": 168,
+        "armed": 168,
+        "pullback_reached": 0,
+        "window_open": 0,
+        "confirmed": 0,
+        "ai_confirmed": 0,
+        "risk_approved": 0,
+        "executed": 0
+      },
+      "failures": {
+        "invalidation_in_armed": 166,
+        "invalidation_in_window": 0,
+        "pullback_timeout": 0,
+        "filter_rejection": 463,
+        "ai_rejection": 0,
+        "risk_rejection": 0,
+        "breakout_expired": 0
+      },
+      "directions": {
+        "long": 322,
+        "short": 309
+      },
+      "invalidation_timing": {
+        "avg_candles_before_invalidation": 2.05,
+        "median_candles_before_invalidation": 2.0,
+        "max_candles_before_invalidation": 9
+      },
+      "survival_by_candle": {
+        "1": 76,
+        "2": 42,
+        "3": 27,
+        "4": 12,
+        "5": 6,
+        "6": 1,
+        "7": 1,
+        "9": 1
+      }
+    }
+  },
+  "bottleneck_analysis": {
+    "bottleneck": "PULLBACK_NEVER_REACHED",
+    "stage_counts": {
+      "direction_detected": 1301,
+      "filters_passed": 369,
+      "armed": 369,
+      "pullback_reached": 0,
+      "window_open": 0,
+      "confirmed": 0,
+      "ai_confirmed": 0,
+      "risk_approved": 0,
+      "executed": 0
+    },
+    "failure_counts": {
+      "invalidation_in_armed": 367,
+      "invalidation_in_window": 0,
+      "pullback_timeout": 0,
+      "filter_rejection": 932,
+      "ai_rejection": 0,
+      "risk_rejection": 0,
+      "breakout_expired": 0
+    }
+  },
+  "recommendation": "All setups lost at ARMED stage. Direction flips too fast for pullback to form.",
+  "variant_comparison": {
+    "current_executed": 0,
+    "moderate_relaxed_executed": 1,
+    "aggressive_relaxed_executed": 50,
+    "pullback_disabled_executed": 50,
+    "current_armed": 369,
+    "moderate_relaxed_armed": 369,
+    "aggressive_relaxed_armed": 388,
+    "pullback_disabled_armed": 388,
+    "interpretation": "If relaxed variants produce more trades, the pullback requirement is the bottleneck. If all variants produce 0 trades, the issue is deeper (direction detection or filters)."
+  }
+}
