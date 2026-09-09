@@ -1,31 +1,46 @@
 """MT5 read-only API adapter — wraps MT5ConnectionManager for the API layer.
 
-Provides read-only access to MT5 demo account data.
-No order execution, no trading, no modification capabilities.
+M15: Remote MT5 Demo Bridge
+- Read-only access to MT5 demo account data
+- Heartbeat with timestamps and connection age
+- Observability logging (MT5_CONNECT, MT5_DISCONNECT, etc.)
+- No order execution, no trading, no modification
 
 Safety: This adapter READS from MT5 only. It never sends orders.
 The existing MT5ConnectionManager safety gates are the authority.
 """
 import logging
-from typing import Optional, List, Dict, Any
+import time
+from typing import Optional, List
 
 from src.config import Config
 
 logger = logging.getLogger(__name__)
 
+# ── Module State ───────────────────────────────────────────────────
+
 _connection_manager = None
 _mock_manager = None
 _is_real_mt5 = False
 
+# Heartbeat tracking
+_last_heartbeat_time: float = 0.0
+_last_connected_time: float = 0.0
+_last_disconnect_time: float = 0.0
+_heartbeat_count: int = 0
+_reconnect_count: int = 0
+
+
+# ── Connection Management ──────────────────────────────────────────
 
 def _get_connection_manager():
     """Get or create the MT5 connection manager (lazy singleton).
 
     On non-Windows systems (e.g., Android/Termux), MetaTrader5 package
     is unavailable. Falls back to MockMT5ConnectionManager for graceful
-    degradation — all read operations return disconnected state.
+    degradation.
     """
-    global _connection_manager, _mock_manager, _is_real_mt5
+    global _connection_manager, _is_real_mt5
 
     if _connection_manager is not None:
         return _connection_manager
@@ -53,16 +68,27 @@ def _get_connection_manager():
 
 def _ensure_connection() -> bool:
     """Ensure MT5 is connected. Returns True if connected."""
+    global _last_connected_time, _last_disconnect_time, _reconnect_count
+
     mgr = _get_connection_manager()
     if mgr.health.is_connected:
         return True
     try:
-        return mgr.connect()
+        result = mgr.connect()
+        if result:
+            _last_connected_time = time.time()
+            _reconnect_count += 1
+            logger.info("MT5_CONNECT: Connected to MT5 terminal (reconnect #%d)", _reconnect_count)
+        else:
+            _last_disconnect_time = time.time()
+            logger.debug("MT5_CONNECT: Connection attempt failed")
+        return result
     except ImportError:
-        logger.debug("MetaTrader5 package unavailable — MT5 read-only mode disabled")
+        logger.debug("MT5_CONNECT: MetaTrader5 package unavailable — using mock")
         return False
     except Exception as e:
-        logger.error("MT5 connection failed: %s", e)
+        _last_disconnect_time = time.time()
+        logger.error("MT5_CONNECT: Connection error: %s", e)
         return False
 
 
@@ -106,6 +132,11 @@ def get_status() -> dict:
     """Get MT5 connection and configuration status."""
     mgr, is_real = _safe_get_manager()
     health = mgr.health
+    now = time.time()
+
+    connection_age = None
+    if _last_connected_time > 0:
+        connection_age = int(now - _last_connected_time)
 
     return {
         "enabled": Config.MT5_ENABLED,
@@ -120,6 +151,10 @@ def get_status() -> dict:
         "magic_number": Config.MT5_MAGIC_NUMBER,
         "server": Config.MT5_SERVER,
         "platform": "MetaTrader 5 DEMO" if health.is_connected else "NOT AVAILABLE",
+        "terminal_available": is_real and health.is_connected,
+        "last_update": int(now) if health.is_connected else None,
+        "connection_age_seconds": connection_age,
+        "reconnect_count": _reconnect_count,
     }
 
 
@@ -131,7 +166,9 @@ def get_account() -> dict:
         return {
             "connected": False,
             "account": None,
+            "environment": "MT5 DEMO",
             "note": "MT5 not connected. Account information unavailable.",
+            "last_heartbeat": _last_heartbeat_time if _last_heartbeat_time > 0 else None,
         }
 
     info = mgr.get_account_info()
@@ -139,8 +176,11 @@ def get_account() -> dict:
         return {
             "connected": True,
             "account": None,
+            "environment": "MT5 DEMO",
             "note": "Connected but account info unavailable.",
         }
+
+    logger.debug("MT5_ACCOUNT_REFRESH: login=%s balance=%.2f", info.get("login", "?"), info.get("balance", 0.0))
 
     return {
         "connected": True,
@@ -169,6 +209,9 @@ def get_positions(symbol: Optional[str] = None) -> List[dict]:
         return []
 
     positions = mgr.positions_get(symbol=symbol)
+    if positions:
+        logger.debug("MT5_POSITION_REFRESH: %d positions", len(positions))
+
     result = []
     for pos in positions:
         pos_type = "BUY" if pos.get("type", 0) == 0 else "SELL"
@@ -199,7 +242,6 @@ def get_orders() -> List[dict]:
 
     # MT5ConnectionManager doesn't have orders_get wrapper yet.
     # Pending orders require mt5.orders_get() which isn't wrapped.
-    # Return empty for now — positions are the primary read target.
     return []
 
 
@@ -237,9 +279,31 @@ def get_quote(symbol: str) -> Optional[dict]:
 
 
 def get_heartbeat() -> dict:
-    """MT5 connection heartbeat — lightweight health check."""
+    """MT5 connection heartbeat — lightweight health check with timestamps.
+
+    Returns:
+        connected: current connection state
+        state: health state machine value
+        demo_verified: whether demo account is verified
+        can_trade: whether trading is permitted (always false in read-only)
+        last_error: most recent error message (if any)
+        timestamp: current server time
+        last_heartbeat: time of last heartbeat call
+        connection_age_seconds: how long since last successful connect
+        reconnect_count: total reconnection attempts
+    """
+    global _last_heartbeat_time
+
     mgr, is_real = _safe_get_manager()
     health = mgr.health
+    now = time.time()
+    _last_heartbeat_time = now
+
+    connection_age = None
+    if _last_connected_time > 0:
+        connection_age = int(now - _last_connected_time)
+
+    logger.debug("MT5_HEARTBEAT: connected=%s state=%s", health.is_connected, health.state.value)
 
     return {
         "connected": health.is_connected,
@@ -247,6 +311,11 @@ def get_heartbeat() -> dict:
         "demo_verified": health.is_demo_verified,
         "can_trade": health.can_trade(),
         "last_error": health.last_error[:100] if health.last_error else None,
+        "timestamp": int(now),
+        "last_heartbeat": int(now),
+        "connection_age_seconds": connection_age,
+        "reconnect_count": _reconnect_count,
+        "is_real_mt5": is_real,
     }
 
 
@@ -257,8 +326,6 @@ def get_symbols() -> List[dict]:
     if not mgr.health.is_connected:
         return []
 
-    # MT5ConnectionManager doesn't have a symbols_get wrapper.
-    # Use the configured SYMBOLS from Config as available symbols.
     symbols = []
     for sym in Config.SYMBOLS:
         info = mgr.symbol_info(sym)
@@ -270,6 +337,9 @@ def get_symbols() -> List[dict]:
 def reset():
     """Reset the adapter state (for testing)."""
     global _connection_manager, _mock_manager, _is_real_mt5
+    global _last_heartbeat_time, _last_connected_time, _last_disconnect_time
+    global _heartbeat_count, _reconnect_count
+
     if _connection_manager is not None:
         try:
             _connection_manager.shutdown()
@@ -278,3 +348,8 @@ def reset():
     _connection_manager = None
     _mock_manager = None
     _is_real_mt5 = False
+    _last_heartbeat_time = 0.0
+    _last_connected_time = 0.0
+    _last_disconnect_time = 0.0
+    _heartbeat_count = 0
+    _reconnect_count = 0

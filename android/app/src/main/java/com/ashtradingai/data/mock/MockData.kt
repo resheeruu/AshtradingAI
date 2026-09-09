@@ -95,14 +95,19 @@ object MockData {
         last_error = null,
         magic_number = 20260904,
         server = "MetaQuotes-Demo",
-        platform = "NOT AVAILABLE"
+        platform = "NOT AVAILABLE",
+        terminal_available = false,
+        last_update = null,
+        connection_age_seconds = null,
+        reconnect_count = 0
     )
 
     val mt5Account = MT5AccountResponse(
         connected = false,
         account = null,
         environment = "MT5 DEMO",
-        note = "MT5 not connected. Account information unavailable."
+        note = "MT5 not connected. Account information unavailable.",
+        last_heartbeat = null
     )
 
     val mt5Positions = listOf<MT5Position>()

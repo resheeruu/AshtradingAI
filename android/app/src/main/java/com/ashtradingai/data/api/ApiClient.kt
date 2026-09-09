@@ -136,6 +136,20 @@ class ApiClient(private var baseUrl: String = "http://10.0.2.2:8000") {
         gson.fromJson(json, MT5Heartbeat::class.java)
     }
 
+    suspend fun getMT5Orders(): List<Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/mt5/orders")
+        val type = object : TypeToken<Map<String, List<Any>>>() {}.type
+        val map: Map<String, List<Any>> = gson.fromJson(json, type)
+        map["orders"] ?: emptyList()
+    }
+
+    suspend fun getMT5Symbols(): List<Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/mt5/symbols")
+        val type = object : TypeToken<Map<String, List<Any>>>() {}.type
+        val map: Map<String, List<Any>> = gson.fromJson(json, type)
+        map["symbols"] ?: emptyList()
+    }
+
     suspend fun getMarketHealth(): MarketHealth = withContext(Dispatchers.IO) {
         val json = get("/api/market/health")
         gson.fromJson(json, MarketHealth::class.java)

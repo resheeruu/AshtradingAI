@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +40,7 @@ fun MT5DemoScreen(uiState: AppUiState) {
             Spacer(modifier = Modifier.height(4.dp))
         }
 
+        // ── Read-Only Access Banner ──
         item {
             Box(
                 modifier = Modifier
@@ -64,17 +66,55 @@ fun MT5DemoScreen(uiState: AppUiState) {
             }
         }
 
+        // ── Connection Status with Indicator Dot ──
         item {
             Spacer(modifier = Modifier.height(4.dp))
             SectionHeader("Connection Status")
         }
 
         item {
-            SafetyIndicator(
-                label = "CONNECTION",
-                status = uiState.mt5Status.connection.ifEmpty { "UNKNOWN" }
-            )
+            val isConnected = uiState.mt5Status.connection == "CONNECTED"
+            val dotColor = if (isConnected) StatusOnline else StatusError
+            val statusText = if (isConnected) "CONNECTED" else "DISCONNECTED"
+            val statusBg = if (isConnected) StatusOnline.copy(alpha = 0.1f) else StatusError.copy(alpha = 0.1f)
+            val statusBorder = if (isConnected) StatusOnline.copy(alpha = 0.3f) else StatusError.copy(alpha = 0.3f)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(statusBg)
+                    .border(2.dp, statusBorder, RoundedCornerShape(12.dp))
+                    .padding(16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
+                    Column {
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = dotColor
+                        )
+                        if (!isConnected && uiState.mt5Status.last_error != null) {
+                            Text(
+                                text = "Reason: ${uiState.mt5Status.last_error}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
         }
+
         item {
             SafetyIndicator(
                 label = "STATE",
@@ -89,12 +129,6 @@ fun MT5DemoScreen(uiState: AppUiState) {
         }
         item {
             SafetyIndicator(
-                label = "CAN TRADE",
-                status = if (uiState.mt5Status.can_trade) "YES" else "NO"
-            )
-        }
-        item {
-            SafetyIndicator(
                 label = "DEMO ONLY",
                 status = if (uiState.mt5Status.demo_only) "ENABLED" else "DISABLED"
             )
@@ -105,26 +139,52 @@ fun MT5DemoScreen(uiState: AppUiState) {
                 status = if (uiState.mt5Status.demo_trading_enabled) "ENABLED" else "DISABLED"
             )
         }
+        item {
+            SafetyIndicator(
+                label = "MT5 API",
+                status = "READ ONLY"
+            )
+        }
 
-        if (uiState.mt5Status.last_error != null) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AccentRed.copy(alpha = 0.1f))
-                        .border(1.dp, AccentRed.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = "Last Error: ${uiState.mt5Status.last_error}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AccentRed
+        // ── Heartbeat Section ──
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("Heartbeat")
+        }
+
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(DarkSurface)
+                    .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
+                    .padding(16.dp)
+            ) {
+                Column {
+                    DataRow("Connected", if (uiState.mt5Status.connection == "CONNECTED") "YES" else "NO")
+                    DataRow("Real MT5", if (uiState.mt5Status.is_real_mt5) "YES" else "NO (mock/unavailable)")
+                    DataRow(
+                        "Connection Age",
+                        uiState.mt5Status.connection_age_seconds?.let { "${it}s" } ?: "N/A"
                     )
+                    DataRow("Reconnects", "${uiState.mt5Status.reconnect_count}")
+                    if (uiState.mt5Status.last_update != null) {
+                        val lastUpdate = uiState.mt5Status.last_update
+                        val now = System.currentTimeMillis() / 1000
+                        val age = now - lastUpdate
+                        val stale = age > 60
+                        DataRow(
+                            "Last Update",
+                            "${age}s ago${if (stale) " (STALE)" else ""}",
+                            if (stale) AccentOrange else TextPrimary
+                        )
+                    }
                 }
             }
         }
 
+        // ── Account Information ──
         item {
             Spacer(modifier = Modifier.height(8.dp))
             SectionHeader("Account Information")
@@ -184,15 +244,28 @@ fun MT5DemoScreen(uiState: AppUiState) {
                         .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
                         .padding(16.dp)
                 ) {
-                    Text(
-                        text = uiState.mt5Account.note ?: "MT5 not connected. Account information unavailable.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
-                    )
+                    Column {
+                        Text(
+                            text = uiState.mt5Account.note ?: "MT5 not connected. Account information unavailable.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                        uiState.mt5Account.last_heartbeat?.let { hb ->
+                            val now = System.currentTimeMillis() / 1000
+                            val age = now - hb
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Last successful heartbeat: ${age}s ago",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextMuted
+                            )
+                        }
+                    }
                 }
             }
         }
 
+        // ── Open Positions ──
         item {
             Spacer(modifier = Modifier.height(8.dp))
             SectionHeader("Open Positions (MT5 DEMO)")
@@ -211,6 +284,7 @@ fun MT5DemoScreen(uiState: AppUiState) {
             }
         }
 
+        // ── Configuration ──
         item {
             Spacer(modifier = Modifier.height(8.dp))
             SectionHeader("Configuration")
@@ -234,6 +308,7 @@ fun MT5DemoScreen(uiState: AppUiState) {
             }
         }
 
+        // ── Safety Warning ──
         item {
             Box(
                 modifier = Modifier

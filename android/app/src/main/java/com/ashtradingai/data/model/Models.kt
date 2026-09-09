@@ -126,14 +126,19 @@ data class MT5Status(
     val last_error: String? = null,
     val magic_number: Int = 0,
     val server: String = "",
-    val platform: String = ""
+    val platform: String = "",
+    val terminal_available: Boolean = false,
+    val last_update: Int? = null,
+    val connection_age_seconds: Int? = null,
+    val reconnect_count: Int = 0
 )
 
 data class MT5AccountResponse(
     val connected: Boolean = false,
     val account: MT5Account? = null,
     val environment: String = "",
-    val note: String? = null
+    val note: String? = null,
+    val last_heartbeat: Int? = null
 )
 
 data class MT5Account(
@@ -182,7 +187,12 @@ data class MT5Heartbeat(
     val state: String = "",
     val demo_verified: Boolean = false,
     val can_trade: Boolean = false,
-    val last_error: String? = null
+    val last_error: String? = null,
+    val timestamp: Int = 0,
+    val last_heartbeat: Int = 0,
+    val connection_age_seconds: Int? = null,
+    val reconnect_count: Int = 0,
+    val is_real_mt5: Boolean = false
 )
 
 data class MarketHealth(

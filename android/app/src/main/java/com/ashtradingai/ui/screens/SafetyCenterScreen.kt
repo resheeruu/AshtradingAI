@@ -91,6 +91,20 @@ fun SafetyCenterScreen(uiState: AppUiState) {
 
         item {
             SafetyIndicator(
+                label = "MT5 EXECUTION",
+                status = "DISABLED"
+            )
+        }
+
+        item {
+            SafetyIndicator(
+                label = "MT5 API",
+                status = "READ ONLY"
+            )
+        }
+
+        item {
+            SafetyIndicator(
                 label = "PAPER TRADING",
                 status = uiState.systemStatus.safety.paper_trading,
                 isGood = true
@@ -134,10 +148,11 @@ fun SafetyCenterScreen(uiState: AppUiState) {
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     DefenseLayer("1. Mobile App", "Cannot enable live trading")
-                    DefenseLayer("2. API Gateway", "Validates all requests")
-                    DefenseLayer("3. Trading Engine", "Checks strategy permissions")
+                    DefenseLayer("2. API Gateway", "Auth + validates all requests")
+                    DefenseLayer("3. Read-Only Adapter", "No execution methods")
                     DefenseLayer("4. Safety Gate", "Blocks if LIVE_TRADING=true")
-                    DefenseLayer("5. Broker", "Enforces demo-only mode")
+                    DefenseLayer("5. Connection Manager", "6 safety gates on connect")
+                    DefenseLayer("6. MT5 Terminal", "Enforces demo-only mode")
                 }
             }
         }

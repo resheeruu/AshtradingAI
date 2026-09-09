@@ -1,13 +1,22 @@
-"""AshtradingAI REST API Server — FastAPI backend for mobile companion app."""
+"""AshtradingAI REST API Server — FastAPI backend for mobile companion app.
+
+M15: Remote MT5 Demo Bridge
+- Token-based API authentication
+- MT5 read-only endpoints with heartbeat
+- Observability logging
+- Safety gate enforcement
+"""
+import hashlib
 import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -18,17 +27,77 @@ from src.persistence.database import Database
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── Authentication ────────────────────────────────────────────────
+# API Authentication via environment variable.
+# Set API_SECRET_KEY in .env for production.
+# When unset, authentication is disabled (development mode).
+
+API_SECRET_KEY = os.getenv("API_SECRET_KEY", "")
+AUTH_ENABLED = bool(API_SECRET_KEY)
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 hash for secure token comparison (no plaintext logging)."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def verify_api_key(authorization: Optional[str] = Header(None)) -> bool:
+    """FastAPI dependency: verify API key from Authorization header.
+
+    Expected format: Authorization: Bearer <token>
+    Returns True if valid, raises 401 if invalid.
+    When API_SECRET_KEY is not set, authentication is disabled (dev mode).
+    """
+    if not AUTH_ENABLED:
+        return True
+
+    if not authorization:
+        logger.warning("API_AUTH_FAILURE: Missing Authorization header")
+        raise HTTPException(status_code=401, detail="Missing authentication")
+
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        logger.warning("API_AUTH_FAILURE: Malformed Authorization header")
+        raise HTTPException(status_code=401, detail="Invalid authentication format")
+
+    token = parts[1]
+    if not token or len(token) < 8:
+        logger.warning("API_AUTH_FAILURE: Token too short")
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    expected_hash = _hash_token(API_SECRET_KEY)
+    actual_hash = _hash_token(token)
+
+    if not _constant_time_compare(expected_hash, actual_hash):
+        logger.warning("API_AUTH_FAILURE: Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid authentication")
+
+    return True
+
+
+def _constant_time_compare(a: str, b: str) -> bool:
+    """Constant-time string comparison to prevent timing attacks."""
+    if len(a) != len(b):
+        return False
+    result = 0
+    for x, y in zip(a, b):
+        result |= ord(x) ^ ord(y)
+    return result == 0
+
+
+# ── App Setup ─────────────────────────────────────────────────────
+
 app = FastAPI(
     title="AshtradingAI API",
     description="Research platform API for the AshtradingAI mobile companion",
-    version="1.0.0",
+    version="1.5.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],  # Restrict to needed methods
     allow_headers=["*"],
 )
 
@@ -443,42 +512,42 @@ def get_logs(
 
 
 @app.get("/api/mt5/status")
-def get_mt5_status():
+def get_mt5_status(authorized: bool = Depends(verify_api_key)):
     """MT5 Demo connection and configuration status (read-only)."""
     from src.mt5.readonly_api import get_status
     return get_status()
 
 
 @app.get("/api/mt5/account")
-def get_mt5_account():
+def get_mt5_account(authorized: bool = Depends(verify_api_key)):
     """MT5 Demo account information (read-only). Balance, equity, margin, etc."""
     from src.mt5.readonly_api import get_account
     return get_account()
 
 
 @app.get("/api/mt5/positions")
-def get_mt5_positions(symbol: Optional[str] = None):
+def get_mt5_positions(symbol: Optional[str] = None, authorized: bool = Depends(verify_api_key)):
     """MT5 Demo open positions (read-only)."""
     from src.mt5.readonly_api import get_positions
     return {"positions": get_positions(symbol=symbol)}
 
 
 @app.get("/api/mt5/orders")
-def get_mt5_orders():
+def get_mt5_orders(authorized: bool = Depends(verify_api_key)):
     """MT5 Demo pending orders (read-only)."""
     from src.mt5.readonly_api import get_orders
     return {"orders": get_orders()}
 
 
 @app.get("/api/mt5/symbols")
-def get_mt5_symbols():
+def get_mt5_symbols(authorized: bool = Depends(verify_api_key)):
     """MT5 Demo available symbols (read-only)."""
     from src.mt5.readonly_api import get_symbols
     return {"symbols": get_symbols()}
 
 
 @app.get("/api/mt5/quote/{symbol}")
-def get_mt5_quote(symbol: str):
+def get_mt5_quote(symbol: str, authorized: bool = Depends(verify_api_key)):
     """MT5 Demo current bid/ask quote for a symbol (read-only)."""
     from src.mt5.readonly_api import get_quote
     quote = get_quote(symbol)
@@ -488,8 +557,8 @@ def get_mt5_quote(symbol: str):
 
 
 @app.get("/api/mt5/heartbeat")
-def get_mt5_heartbeat():
-    """MT5 Demo connection heartbeat — lightweight health check."""
+def get_mt5_heartbeat(authorized: bool = Depends(verify_api_key)):
+    """MT5 Demo connection heartbeat — lightweight health check with timestamps."""
     from src.mt5.readonly_api import get_heartbeat
     return get_heartbeat()
 
