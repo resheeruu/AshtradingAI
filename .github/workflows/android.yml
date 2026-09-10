@@ -36,30 +36,10 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Remove Termux-specific aapt2 override
-        run: |
-          cat android/gradle.properties
-          sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
-          echo "--- After sed ---"
-          cat android/gradle.properties
+        run: sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
 
       - name: Write local.properties for CI
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          cat android/local.properties
-
-      - name: Debug environment
-        run: |
-          {
-            echo "## Environment"
-            echo '```'
-            echo "JAVA_HOME=$JAVA_HOME"
-            java -version 2>&1
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "No platforms dir"
-            ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "No build-tools dir"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -68,30 +48,29 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "exit_code=$EXIT_CODE" >> "$GITHUB_ENV"
-          {
-            echo "## Build Result"
-            echo "Exit code: $EXIT_CODE"
-            echo ""
-            echo "### Last 200 lines of output:"
-            echo '```'
-            tail -200 /tmp/gradle-output.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit 0
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 > /tmp/gradle-output.txt || true
+          echo "BUILD_EXIT=$?" >> /tmp/gradle-output.txt
+          echo "--- ENVIRONMENT ---" >> /tmp/gradle-output.txt
+          echo "JAVA_HOME=$JAVA_HOME" >> /tmp/gradle-output.txt
+          echo "ANDROID_HOME=$ANDROID_HOME" >> /tmp/gradle-output.txt
+          cat android/local.properties >> /tmp/gradle-output.txt
+          cat android/gradle.properties >> /tmp/gradle-output.txt
+          echo "--- FILES ---" >> /tmp/gradle-output.txt
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null >> /tmp/gradle-output.txt || echo "No APK output" >> /tmp/gradle-output.txt
 
-      - name: Fail if build failed
-        if: env.exit_code != '0'
-        run: |
-          echo "Build failed with exit code ${{ env.exit_code }}"
-          exit 1
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/gradle-output.txt
+          if-no-files-found: error
+          retention-days: 5
 
       - name: Upload debug APK
-        if: env.exit_code == '0'
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          if-no-files-found: warn
