@@ -289,6 +289,74 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_m7_signals_session ON m7_signals(session_id);
             CREATE INDEX IF NOT EXISTS idx_m7_signals_symbol ON m7_signals(symbol);
             CREATE INDEX IF NOT EXISTS idx_m7_state_session ON m7_state(session_id);
+
+            CREATE TABLE IF NOT EXISTS trade_journal (
+                id TEXT PRIMARY KEY,
+                trade_id TEXT NOT NULL,
+                signal_json TEXT,
+                ai_decision_json TEXT,
+                strategy_id TEXT,
+                market_state_json TEXT,
+                risk_checks_json TEXT,
+                risk_rejection TEXT,
+                approved INTEGER DEFAULT 0,
+                execution_json TEXT,
+                fill_price REAL,
+                stop_loss REAL,
+                take_profit REAL,
+                exit_price REAL,
+                pnl REAL,
+                fees REAL DEFAULT 0,
+                slippage REAL DEFAULT 0,
+                exit_reason TEXT,
+                mistake_tags_json TEXT,
+                timestamp TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_journal_trade ON trade_journal(trade_id);
+            CREATE INDEX IF NOT EXISTS idx_journal_strategy ON trade_journal(strategy_id);
+            CREATE INDEX IF NOT EXISTS idx_journal_timestamp ON trade_journal(timestamp);
+
+            CREATE TABLE IF NOT EXISTS risk_blocks (
+                id TEXT PRIMARY KEY,
+                trade_id TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                gate TEXT NOT NULL,
+                account_snapshot_json TEXT,
+                signal_snapshot_json TEXT,
+                timestamp TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_risk_blocks_gate ON risk_blocks(gate);
+            CREATE INDEX IF NOT EXISTS idx_risk_blocks_timestamp ON risk_blocks(timestamp);
+
+            CREATE TABLE IF NOT EXISTS reconciliation_log (
+                id TEXT PRIMARY KEY,
+                warning_type TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                internal_value TEXT,
+                broker_value TEXT,
+                description TEXT,
+                timestamp TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_recon_symbol ON reconciliation_log(symbol);
+            CREATE INDEX IF NOT EXISTS idx_recon_timestamp ON reconciliation_log(timestamp);
+
+            CREATE TABLE IF NOT EXISTS strategy_ratings (
+                id TEXT PRIMARY KEY,
+                strategy_id TEXT NOT NULL,
+                metrics_json TEXT,
+                oos_return REAL,
+                stability_score REAL,
+                regime_robustness REAL,
+                composite_score REAL,
+                warnings_json TEXT,
+                rating TEXT,
+                timestamp TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_strategy_rating ON strategy_ratings(strategy_id);
         """)
         conn.commit()
         # Migrate existing tables to add new columns if missing

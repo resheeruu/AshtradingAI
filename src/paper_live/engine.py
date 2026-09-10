@@ -245,7 +245,8 @@ class PaperLiveEngine:
             self._candle_history[symbol] = valid_candles
 
             # Check for stale data — do not process if data is too old
-            if self.market_health.is_stale(symbol):
+            # Only check after at least one successful record (avoids blocking first run)
+            if scheduler.last_processed_candle is not None and self.market_health.is_stale(symbol):
                 logger.warning("Market data stale for %s, skipping processing", symbol)
                 return
 

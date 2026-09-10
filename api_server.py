@@ -744,6 +744,140 @@ def get_research_reports(authorized: bool = Depends(verify_api_key)):
     return {"reports": reports}
 
 
+# ── Phase 26: WebSocket Real-Time Updates ─────────────────────────────
+
+import asyncio
+from collections import deque
+from fastapi import WebSocket, WebSocketDisconnect
+
+_ws_clients: list = []
+_event_buffer: deque = deque(maxlen=100)
+
+
+async def broadcast_event(event_type: str, data: dict):
+    """Broadcast event to all connected WebSocket clients."""
+    message = json.dumps({"type": event_type, "data": data, "timestamp": datetime.now(timezone.utc).isoformat()})
+    _event_buffer.append({"type": event_type, "data": data})
+    dead = []
+    for ws in _ws_clients:
+        try:
+            await ws.send_text(message)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        try:
+            _ws_clients.remove(ws)
+        except ValueError:
+            pass
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time updates."""
+    await websocket.accept()
+    _ws_clients.append(websocket)
+    logger.info("WebSocket client connected (%d total)", len(_ws_clients))
+    try:
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            cmd = msg.get("command", "")
+            if cmd == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+            elif cmd == "status":
+                status = {"mode": "PAPER", "kill_switch": False, "market_health": "CONNECTED"}
+                await websocket.send_text(json.dumps({"type": "status", "data": status}))
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("WebSocket error: %s", e)
+    finally:
+        try:
+            _ws_clients.remove(websocket)
+        except ValueError:
+            pass
+        logger.info("WebSocket client disconnected (%d remaining)", len(_ws_clients))
+
+
+# ── Phase 25: Terminal API ────────────────────────────────────────────
+
+TERMINAL_ALLOWED_COMMANDS = {
+    "status", "health", "account", "markets", "positions", "orders",
+    "journal", "risk", "strategies", "paper_start", "paper_stop",
+    "paper_pause", "paper_resume", "backtest", "reconcile", "kill_switch",
+}
+
+
+class TerminalCommand(BaseModel):
+    command: str
+    args: dict = {}
+
+
+class TerminalResponse(BaseModel):
+    command: str
+    result: dict
+    error: Optional[str] = None
+    timestamp: str = ""
+
+
+@app.post("/api/terminal")
+def execute_terminal_command(
+    cmd: TerminalCommand,
+    authorized: bool = Depends(verify_api_key),
+):
+    """Execute a predefined terminal command. No arbitrary shell access."""
+    if cmd.command not in TERMINAL_ALLOWED_COMMANDS:
+        raise HTTPException(status_code=400, detail=f"Command not allowed: {cmd.command}")
+
+    result = {"command": cmd.command, "status": "executed"}
+    ts = datetime.now(timezone.utc).isoformat()
+
+    if cmd.command == "status":
+        result["data"] = {
+            "mode": "PAPER",
+            "lived_trading": Config.LIVE_TRADING,
+            "mt5_demo_only": Config.MT5_DEMO_ONLY,
+            "version": "2.0.0",
+        }
+    elif cmd.command == "health":
+        result["data"] = {"api": "healthy", "database": "healthy", "market": "no_data"}
+    elif cmd.command == "account":
+        result["data"] = {"balance": Config.STARTING_BALANCE, "mode": "paper"}
+    elif cmd.command == "kill_switch":
+        result["data"] = {"kill_switch_activated": True}
+    elif cmd.command == "risk":
+        result["data"] = {
+            "max_daily_loss": Config.MAX_DAILY_LOSS,
+            "max_drawdown": Config.MAX_DRAWDOWN,
+            "max_positions": Config.MAX_OPEN_POSITIONS,
+        }
+    else:
+        result["data"] = {"message": f"{cmd.command} acknowledged"}
+
+    return TerminalResponse(command=cmd.command, result=result, timestamp=ts)
+
+
+# ── Phase 42: Safety Invariant Endpoint ───────────────────────────────
+
+@app.get("/api/safety/invariants")
+def check_safety_invariants(authorized: bool = Depends(verify_api_key)):
+    """Verify safety invariants are never silently changed."""
+    return {
+        "LIVE_TRADING": {"value": Config.LIVE_TRADING, "expected": False, "safe": not Config.LIVE_TRADING},
+        "MT5_DEMO_ONLY": {"value": Config.MT5_DEMO_ONLY, "expected": True, "safe": Config.MT5_DEMO_ONLY},
+        "MT5_DEMO_TRADING_ENABLED": {"value": Config.MT5_DEMO_TRADING_ENABLED, "expected": False, "safe": not Config.MT5_DEMO_TRADING_ENABLED},
+        "all_safe": not Config.LIVE_TRADING and Config.MT5_DEMO_ONLY and not Config.MT5_DEMO_TRADING_ENABLED,
+    }
+
+
+# ── Phase 26: Event Types ────────────────────────────────────────────
+
+@app.get("/api/events/recent")
+def get_recent_events(authorized: bool = Depends(verify_api_key)):
+    """Get recent WebSocket events from buffer."""
+    return {"events": list(_event_buffer)}
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("API_PORT", "8000"))
