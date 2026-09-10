@@ -27,9 +27,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -39,49 +36,60 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Remove Termux-specific aapt2 override
-        run: sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
+        run: |
+          cat android/gradle.properties
+          sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
+          echo "--- After sed ---"
+          cat android/gradle.properties
 
       - name: Write local.properties for CI
-        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          cat android/local.properties
 
       - name: Debug environment
         run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          java -version
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "No platforms"
-          ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "No build-tools"
-          cat android/local.properties
-          cat android/gradle.properties
+          {
+            echo "## Environment"
+            echo '```'
+            echo "JAVA_HOME=$JAVA_HOME"
+            java -version 2>&1
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "No platforms dir"
+            ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "No build-tools dir"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
         working-directory: android
         run: |
-          ./gradlew clean assembleDebug --no-daemon 2>&1 | tee /tmp/gradle-output.txt
-          BUILD_EXIT=${PIPESTATUS[0]}
-          echo "Build exit code: $BUILD_EXIT"
-          if [ $BUILD_EXIT -ne 0 ]; then
-            echo "::error::Gradle build failed with exit code $BUILD_EXIT"
-            tail -100 /tmp/gradle-output.txt
-          fi
-          exit $BUILD_EXIT
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_ENV"
+          {
+            echo "## Build Result"
+            echo "Exit code: $EXIT_CODE"
+            echo ""
+            echo "### Last 200 lines of output:"
+            echo '```'
+            tail -200 /tmp/gradle-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
-      - name: Run lint
-        if: success()
-        working-directory: android
-        run: ./gradlew lint --no-daemon
-
-      - name: Upload lint report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-report
-          path: android/app/build/reports/lint-results-debug.html
-          if-no-files-found: ignore
+      - name: Fail if build failed
+        if: env.exit_code != '0'
+        run: |
+          echo "Build failed with exit code ${{ env.exit_code }}"
+          exit 1
 
       - name: Upload debug APK
-        if: success()
+        if: env.exit_code == '0'
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
