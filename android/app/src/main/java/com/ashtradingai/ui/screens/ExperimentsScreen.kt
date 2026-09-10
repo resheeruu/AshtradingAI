@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import com.ashtradingai.data.model.ExperimentInfo
 import com.ashtradingai.ui.components.*
 import com.ashtradingai.ui.theme.*

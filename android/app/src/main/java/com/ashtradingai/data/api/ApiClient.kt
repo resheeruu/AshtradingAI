@@ -6,6 +6,7 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -75,8 +76,6 @@ class ApiClient(
             else -> throw IOException("HTTP $code from $endpoint")
         }
     }
-
-    private fun String.toMediaType() = okhttp3.MediaType.parse("application/json")!!
 
     suspend fun getStatus(): SystemStatus = withContext(Dispatchers.IO) {
         val json = get("/api/status")
