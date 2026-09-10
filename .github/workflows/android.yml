@@ -30,38 +30,26 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
           accept-android-sdk-licenses: true
-
-      - name: Install Android SDK platform and build tools
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Remove Termux-specific aapt2 override
         run: sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
 
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
       - name: Write local.properties for CI
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Diagnose environment
-        working-directory: android
-        run: |
-          java -version
-          ./gradlew --version
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          adb --version || true
-          ls -la "$ANDROID_HOME" || true
-          ls -la .
-          ls -la gradle/wrapper
-          cat local.properties
-          cat gradle.properties
-
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew --no-daemon clean assembleDebug --stacktrace --info
+        run: ./gradlew --no-daemon clean assembleDebug --stacktrace
 
       - name: Run lint
         if: success()
         working-directory: android
-        run: ./gradlew --no-daemon lint
+        run: ./gradlew --no-daemon lint --stacktrace
 
       - name: Upload lint report
         if: always()
