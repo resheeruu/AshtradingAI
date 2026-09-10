@@ -28,11 +28,9 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
-          api-level: 35
-          build-tools: 35.0.0
-          accept-android-sdk-licenses: true
+          packages: 'platforms;android-35 build-tools;35.0.0'
 
       - name: Remove Termux-specific aapt2 override
         run: sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
