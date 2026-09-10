@@ -22,27 +22,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
 
       - name: Install Android SDK platform and build tools
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Show SDK environment
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la $ANDROID_HOME/ 2>/dev/null || echo "ANDROID_HOME not found"
-          ls -la $ANDROID_SDK_ROOT/ 2>/dev/null || echo "ANDROID_SDK_ROOT not found"
-          sdkmanager --list_installed 2>/dev/null || true
 
       - name: Remove Termux-specific aapt2 override
         run: sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
@@ -55,7 +46,15 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew clean assembleDebug --stacktrace --no-daemon
+        run: ./gradlew clean assembleDebug --stacktrace --no-daemon 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          if-no-files-found: ignore
 
       - name: Run lint
         if: success()
