@@ -41,20 +41,15 @@ jobs:
       - name: Write local.properties for CI
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x android/gradlew
-
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew clean assembleDebug --stacktrace --no-daemon 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: /tmp/build.log
-          if-no-files-found: ignore
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assembleDebug --no-daemon --stacktrace 2>&1 || {
+            echo "::error::Gradle build failed"
+            cat /tmp/gradle-build.log 2>/dev/null || true
+            exit 1
+          }
 
       - name: Run lint
         if: success()
