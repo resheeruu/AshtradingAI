@@ -220,3 +220,92 @@ data class AIDecision(
     val reason: String? = null,
     val action_taken: String? = null
 )
+
+data class StrategyRegistryEntry(
+    val strategy_id: String = "",
+    val name: String = "",
+    val family: String = "",
+    val holding_period: String = "",
+    val timeframes: List<String> = emptyList(),
+    val regimes: List<String> = emptyList(),
+    val entry_conditions: List<String> = emptyList(),
+    val invalidation_conditions: List<String> = emptyList(),
+    val min_bars: Int = 0
+)
+
+data class LeaderboardEntry(
+    val strategy_id: String = "",
+    val strategy_family: String = "",
+    val signal: String = "",
+    val direction: String = "",
+    val confidence: Double = 0.0,
+    val regime_compatibility: Double = 0.0,
+    val score: Double = 0.0,
+    val rank: Int = 0,
+    val risk_reward_ratio: Double? = null,
+    val timeframe: String = "",
+    val expected_holding_period: String = ""
+)
+
+data class MarketRegimeInfo(
+    val regime: String = "",
+    val confidence: Double = 0.0,
+    val description: String = "",
+    val indicators: Map<String, Any> = emptyMap()
+)
+
+data class StrategySelectionInfo(
+    val selected_strategy: String = "",
+    val direction: String = "",
+    val confidence: Double = 0.0,
+    val reason: String = "",
+    val risk_level: String = "",
+    val regime: String = "",
+    val volatility: Double = 0.0,
+    val trend: String = "",
+    val momentum: Double = 0.0,
+    val entry_conditions: List<String> = emptyList(),
+    val invalid_conditions: List<String> = emptyList()
+)
+
+data class AutomationStatus(
+    val session: AutomationSession = AutomationSession(),
+    val lease: AutomationLease? = null,
+    val config: AutomationConfig = AutomationConfig()
+)
+
+data class AutomationSession(
+    val state: String = "INACTIVE",
+    val is_active: Boolean = false,
+    val allows_new_trades: Boolean = false
+)
+
+data class AutomationLease(
+    val session_id: String = "",
+    val remaining_time: Double = 0.0,
+    val is_valid: Boolean = false
+)
+
+data class AutomationConfig(
+    val heartbeat_interval: Double = 30.0,
+    val lease_duration: Double = 300.0,
+    val max_lease_extensions: Int = 10
+)
+
+data class PerformanceMetrics(
+    val total_trades: Int = 0,
+    val winning_trades: Int = 0,
+    val losing_trades: Int = 0,
+    val win_rate: Double = 0.0,
+    val total_pnl: Double = 0.0,
+    val avg_pnl: Double = 0.0
+)
+
+data class RiskStatus(
+    val kill_switch: Boolean = false,
+    val trades_today: Int = 0,
+    val daily_pnl: Double = 0.0,
+    val consecutive_losses: Int = 0,
+    val total_exposure: Double = 0.0,
+    val config: Map<String, Any> = emptyMap()
+)

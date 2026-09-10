@@ -16,6 +16,14 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     data object AIResearcher : Screen("ai_researcher", "AI Research", Icons.Default.Psychology)
     data object SignalReplay : Screen("signal_replay", "Replay", Icons.Default.Replay)
     data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+    data object MarketWatch : Screen("market_watch", "Market Watch", Icons.Default.CandlestickChart)
+    data object StrategyLab : Screen("strategy_lab", "Strategy Lab", Icons.Default.Schema)
+    data object AITrader : Screen("ai_trader", "AI Trader", Icons.Default.SmartToy)
+    data object Automation : Screen("automation", "Automation", Icons.Default.PlayCircle)
+    data object TradeHistory : Screen("trade_history", "Trade History", Icons.Default.History)
+    data object Risk : Screen("risk", "Risk", Icons.Default.Shield)
+    data object Journal : Screen("journal", "Journal", Icons.Default.Book)
+    data object Performance : Screen("performance", "Performance", Icons.Default.Analytics)
 }
 
 val bottomNavItems = listOf(
@@ -38,4 +46,12 @@ val allScreens = listOf(
     Screen.AIResearcher,
     Screen.SignalReplay,
     Screen.Settings,
+    Screen.MarketWatch,
+    Screen.StrategyLab,
+    Screen.AITrader,
+    Screen.Automation,
+    Screen.TradeHistory,
+    Screen.Risk,
+    Screen.Journal,
+    Screen.Performance,
 )

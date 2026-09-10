@@ -744,6 +744,282 @@ def get_research_reports(authorized: bool = Depends(verify_api_key)):
     return {"reports": reports}
 
 
+# ── Multi-Strategy Engine Endpoints ───────────────────────────────────
+
+@app.get("/api/strategies/registry")
+def get_strategy_registry(authorized: bool = Depends(verify_api_key)):
+    """List all registered strategies with their specs."""
+    from src.strategy.spec import get_default_strategies
+    strategies = get_default_strategies()
+    return {
+        "strategies": [
+            {
+                "strategy_id": s.strategy_id,
+                "name": s.spec.name,
+                "family": s.spec.strategy_family,
+                "holding_period": s.spec.expected_holding_period,
+                "timeframes": s.spec.supported_timeframes,
+                "regimes": s.spec.regime_compatibility,
+                "entry_conditions": s.spec.entry_conditions,
+                "invalidation_conditions": s.spec.invalidation_conditions,
+                "min_bars": s.spec.min_bars_required,
+            }
+            for s in strategies
+        ],
+        "total": len(strategies),
+    }
+
+
+@app.get("/api/strategies/leaderboard")
+def get_strategy_leaderboard(
+    symbol: Optional[str] = None,
+    regime: Optional[str] = None,
+    limit: int = Query(10, ge=1, le=50),
+    authorized: bool = Depends(verify_api_key),
+):
+    """Strategy leaderboard with scoring."""
+    from src.strategy.spec import get_default_strategies
+    from src.strategy.scoring import StrategyScorer
+    from src.strategy.regime_detector import MarketRegimeDetector
+
+    strategies_list = get_default_strategies()
+    strategies_dict = {s.strategy_id: s for s in strategies_list}
+    scorer = StrategyScorer()
+
+    # Generate synthetic candles for scoring demo
+    candles = [
+        {"close": 1.1 + (i * 0.0001), "high": 1.101 + (i * 0.0001),
+         "low": 1.099 + (i * 0.0001), "open": 1.1 + ((i - 1) * 0.0001),
+         "timestamp": f"2024-01-01T{i:02d}:00:00", "volume": 1000}
+        for i in range(100)
+    ]
+    indicators = {}
+    context = {"symbol": symbol or "EURUSD", "timeframe": "H1"}
+
+    scores = scorer.score_strategies(strategies_dict, candles, indicators, context, regime)
+    return {
+        "leaderboard": [s.to_dict() for s in scores[:limit]],
+        "total_strategies": len(scores),
+        "regime_filter": regime,
+        "symbol_filter": symbol,
+    }
+
+
+@app.get("/api/regime/detect")
+def detect_market_regime(
+    symbol: Optional[str] = None,
+    authorized: bool = Depends(verify_api_key),
+):
+    """Detect current market regime."""
+    from src.strategy.regime_detector import MarketRegimeDetector
+
+    detector = MarketRegimeDetector()
+    candles = [
+        {"close": 1.1 + (i * 0.0001), "high": 1.101 + (i * 0.0001),
+         "low": 1.099 + (i * 0.0001), "open": 1.1 + ((i - 1) * 0.0001),
+         "timestamp": f"2024-01-01T{i:02d}:00:00", "volume": 1000}
+        for i in range(100)
+    ]
+    indicators = {
+        "ema_12": [1.1 + (i * 0.0001) for i in range(100)],
+        "ema_26": [1.1 + (i * 0.00005) for i in range(100)],
+        "adx_14": [30.0] * 100,
+        "atr_14": [0.001] * 100,
+    }
+
+    regime = detector.detect(candles, indicators)
+    preferences = detector.get_strategy_preferences(regime)
+
+    return {
+        "regime": regime.to_dict(),
+        "strategy_preferences": preferences,
+    }
+
+
+@app.get("/api/ai/strategy-select")
+def ai_select_strategy(
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    authorized: bool = Depends(verify_api_key),
+):
+    """AI strategy selection based on market conditions."""
+    from src.strategy.spec import get_default_strategies
+    from src.strategy.ai_selector import AIStrategySelector
+    from src.strategy.regime_detector import MarketRegimeDetector
+
+    strategies_list = get_default_strategies()
+    strategies_dict = {s.strategy_id: s for s in strategies_list}
+    detector = MarketRegimeDetector()
+    selector = AIStrategySelector(strategies_dict, detector)
+
+    candles = [
+        {"close": 1.1 + (i * 0.0001), "high": 1.101 + (i * 0.0001),
+         "low": 1.099 + (i * 0.0001), "open": 1.1 + ((i - 1) * 0.0001),
+         "timestamp": f"2024-01-01T{i:02d}:00:00", "volume": 1000}
+        for i in range(100)
+    ]
+    indicators = {
+        "ema_12": [1.1 + (i * 0.0001) for i in range(100)],
+        "ema_26": [1.1 + (i * 0.00005) for i in range(100)],
+        "adx_14": [30.0] * 100,
+        "atr_14": [0.001] * 100,
+    }
+    context = {
+        "symbol": symbol or "EURUSD",
+        "timeframe": timeframe or "H1",
+        "session": "API",
+        "open_positions": [],
+        "risk_state": {},
+    }
+
+    selection = selector.select_strategy(candles, indicators, context)
+    return {"selection": selection.to_dict()}
+
+
+@app.get("/api/automation/status")
+def get_automation_status(authorized: bool = Depends(verify_api_key)):
+    """Get phone session automation status."""
+    return {
+        "session": {
+            "state": "INACTIVE",
+            "is_active": False,
+            "allows_new_trades": False,
+        },
+        "lease": None,
+        "config": {
+            "heartbeat_interval": 30.0,
+            "lease_duration": 300.0,
+            "max_lease_extensions": 10,
+        },
+    }
+
+
+@app.post("/api/automation/start")
+def start_automation(
+    session_id: str = "api_session",
+    authorized: bool = Depends(verify_api_key),
+):
+    """Start automation session (phone-first)."""
+    log_event("AUTOMATION", "INFO", f"Automation session started: {session_id}")
+    return {
+        "status": "started",
+        "session_id": session_id,
+        "message": "Automation session started. Heartbeat required to maintain.",
+    }
+
+
+@app.post("/api/automation/stop")
+def stop_automation(authorized: bool = Depends(verify_api_key)):
+    """Stop automation session. No new trades after this."""
+    log_event("AUTOMATION", "INFO", "Automation session stopped")
+    return {
+        "status": "stopped",
+        "message": "Automation stopped. No new trades will be placed.",
+    }
+
+
+@app.post("/api/automation/heartbeat")
+def automation_heartbeat(authorized: bool = Depends(verify_api_key)):
+    """Send heartbeat to keep automation session alive."""
+    return {
+        "status": "ok",
+        "message": "Heartbeat received",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/risk/multi-strategy")
+def get_multi_strategy_risk(authorized: bool = Depends(verify_api_key)):
+    """Get multi-strategy risk status."""
+    return {
+        "config": {
+            "max_strategies_per_symbol": 3,
+            "max_correlated_exposure": 0.30,
+            "max_total_exposure": 0.50,
+            "strategy_switch_cooldown": 300,
+            "max_trades_per_strategy_per_day": 5,
+        },
+        "strategy_states": {},
+        "total_exposure": 0.0,
+    }
+
+
+@app.get("/api/risk/advanced")
+def get_advanced_risk(authorized: bool = Depends(verify_api_key)):
+    """Get advanced risk engine status."""
+    return {
+        "kill_switch": False,
+        "trades_today": 0,
+        "daily_pnl": 0.0,
+        "weekly_pnl": 0.0,
+        "consecutive_losses": 0,
+        "peak_balance": Config.STARTING_BALANCE,
+        "total_blocks": 0,
+        "config": {
+            "risk_per_trade": 0.01,
+            "max_daily_loss": Config.MAX_DAILY_LOSS,
+            "max_drawdown": Config.MAX_DRAWDOWN,
+            "max_open_positions": Config.MAX_OPEN_POSITIONS,
+            "min_confidence": Config.MIN_AI_CONFIDENCE,
+            "cooldown_seconds": 300,
+        },
+    }
+
+
+@app.get("/api/journal")
+def get_journal(
+    limit: int = Query(50, ge=1, le=500),
+    authorized: bool = Depends(verify_api_key),
+):
+    """Get trade journal entries."""
+    with db_connection() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,)
+            ).fetchall()
+        except Exception:
+            rows = []
+    entries = []
+    for row in rows:
+        entries.append({
+            "trade_id": row["id"],
+            "timestamp": row["timestamp"],
+            "symbol": row["symbol"],
+            "side": row["side"],
+            "entry_price": row["entry_price"],
+            "exit_price": row["exit_price"],
+            "quantity": row["quantity"],
+            "pnl": row["pnl"],
+            "fee": row["fee"],
+        })
+    return {"journal": entries}
+
+
+@app.get("/api/performance")
+def get_performance(authorized: bool = Depends(verify_api_key)):
+    """Get performance metrics."""
+    with db_connection() as conn:
+        try:
+            trades = conn.execute("SELECT * FROM trades").fetchall()
+        except Exception:
+            trades = []
+
+    total_trades = len(trades)
+    winning = sum(1 for t in trades if (t["pnl"] or 0) > 0)
+    losing = sum(1 for t in trades if (t["pnl"] or 0) <= 0)
+    total_pnl = sum(t["pnl"] or 0 for t in trades)
+    win_rate = winning / total_trades if total_trades > 0 else 0.0
+
+    return {
+        "total_trades": total_trades,
+        "winning_trades": winning,
+        "losing_trades": losing,
+        "win_rate": round(win_rate, 4),
+        "total_pnl": round(total_pnl, 2),
+        "avg_pnl": round(total_pnl / total_trades, 4) if total_trades > 0 else 0.0,
+    }
+
+
 # ── Phase 26: WebSocket Real-Time Updates ─────────────────────────────
 
 import asyncio

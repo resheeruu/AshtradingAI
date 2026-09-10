@@ -1,14 +1,11 @@
 package com.ashtradingai.ui.navigation
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import com.ashtradingai.ui.screens.*
 import com.ashtradingai.ui.theme.*
 import com.ashtradingai.viewmodel.AppUiState
@@ -41,6 +38,14 @@ fun AshtradingAINavigation(
                             Screen.AIResearcher.route -> "AI Researcher"
                             Screen.SignalReplay.route -> "Signal Replay"
                             Screen.Settings.route -> "Settings"
+                            Screen.MarketWatch.route -> "Market Watch"
+                            Screen.StrategyLab.route -> "Strategy Lab"
+                            Screen.AITrader.route -> "AI Trader"
+                            Screen.Automation.route -> "Automation"
+                            Screen.TradeHistory.route -> "Trade History"
+                            Screen.Risk.route -> "Risk"
+                            Screen.Journal.route -> "Journal"
+                            Screen.Performance.route -> "Performance"
                             else -> "AshtradingAI"
                         },
                         color = TextPrimary
@@ -106,9 +111,9 @@ fun AshtradingAINavigation(
                 Screen.Experiments.route -> ExperimentsScreen(uiState)
                 Screen.Positions.route -> PositionsScreen(uiState)
                 Screen.Logs.route -> LogsScreen(uiState)
-                    Screen.SafetyCenter.route -> SafetyCenterScreen(uiState)
-                    Screen.MT5Demo.route -> MT5DemoScreen(uiState)
-                    Screen.AIResearcher.route -> AIResearcherScreen(uiState, onAskAI)
+                Screen.SafetyCenter.route -> SafetyCenterScreen(uiState)
+                Screen.MT5Demo.route -> MT5DemoScreen(uiState)
+                Screen.AIResearcher.route -> AIResearcherScreen(uiState, onAskAI)
                 Screen.SignalReplay.route -> SignalReplayScreen(uiState)
                 Screen.Settings.route -> SettingsScreen(
                     uiState = uiState,
@@ -117,6 +122,14 @@ fun AshtradingAINavigation(
                     onSetAutoRefresh = { enabled -> viewModel?.setAutoRefresh(enabled) },
                     onSetRefreshInterval = { seconds -> viewModel?.setRefreshInterval(seconds) }
                 )
+                Screen.MarketWatch.route -> MarketWatchScreen(uiState)
+                Screen.StrategyLab.route -> StrategyLabScreen(uiState)
+                Screen.AITrader.route -> AITraderScreen(uiState)
+                Screen.Automation.route -> AutomationScreen(uiState)
+                Screen.TradeHistory.route -> TradeHistoryScreen(uiState)
+                Screen.Risk.route -> RiskScreen(uiState)
+                Screen.Journal.route -> JournalScreen(uiState)
+                Screen.Performance.route -> PerformanceScreen(uiState)
             }
         }
     }
