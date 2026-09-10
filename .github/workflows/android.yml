@@ -42,16 +42,17 @@ jobs:
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Diagnose environment
+        working-directory: android
         run: |
           java -version
           ./gradlew --version
           echo "ANDROID_HOME=$ANDROID_HOME"
           adb --version || true
           ls -la "$ANDROID_HOME" || true
-          ls -la android
-          ls -la android/gradle/wrapper
-          cat android/local.properties
-          cat android/gradle.properties
+          ls -la .
+          ls -la gradle/wrapper
+          cat local.properties
+          cat gradle.properties
 
       - name: Build debug APK
         working-directory: android
