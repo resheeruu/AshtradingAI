@@ -87,13 +87,17 @@ def _constant_time_compare(a: str, b: str) -> bool:
 
 # ── App Setup ─────────────────────────────────────────────────────
 
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.6.0"
 
 app = FastAPI(
     title="AshtradingAI API",
-    description="Research platform API for the AshtradingAI mobile companion",
+    description="Phone-first AI Trading Terminal API",
     version=APP_VERSION,
 )
+
+# M8-M16: Include terminal API router
+from api_terminal import router as terminal_router
+app.include_router(terminal_router)
 
 # CORS: restrict in production, allow all in dev
 _cors_origins = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]

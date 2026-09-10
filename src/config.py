@@ -139,6 +139,57 @@ class Config:
     M7_SL_ATR_MULTIPLIER: float = _float(os.getenv("M7_SL_ATR_MULTIPLIER", "2.0"), 2.0)
     M7_TP_ATR_MULTIPLIER: float = _float(os.getenv("M7_TP_ATR_MULTIPLIER", "3.0"), 3.0)
 
+    # Milestone 8: Phone Trading Terminal
+    TERMINAL_ENABLED: bool = _bool(os.getenv("TERMINAL_ENABLED", "true"), True)
+    TERMINAL_HEARTBEAT_INTERVAL: int = _int(os.getenv("TERMINAL_HEARTBEAT_INTERVAL", "30"), 30)
+    TERMINAL_LEASE_DURATION: int = _int(os.getenv("TERMINAL_LEASE_DURATION", "300"), 300)
+    TERMINAL_MAX_SESSION_DURATION: int = _int(os.getenv("TERMINAL_MAX_SESSION_DURATION", "14400"), 14400)
+
+    # Milestone 9: Multi-Strategy Engine
+    MULTI_STRATEGY_ENABLED: bool = _bool(os.getenv("MULTI_STRATEGY_ENABLED", "true"), True)
+    MAX_STRATEGIES_PER_SYMBOL: int = _int(os.getenv("MAX_STRATEGIES_PER_SYMBOL", "3"), 3)
+    SIGNAL_AGREEMENT_THRESHOLD: int = _int(os.getenv("SIGNAL_AGREEMENT_THRESHOLD", "2"), 2)
+    STRATEGY_SWITCH_COOLDOWN: int = _int(os.getenv("STRATEGY_SWITCH_COOLDOWN", "300"), 300)
+
+    # Milestone 10: AI Validation Engine
+    AI_VALIDATION_ENABLED: bool = _bool(os.getenv("AI_VALIDATION_ENABLED", "true"), True)
+    AI_VALIDATION_MIN_CONFIDENCE: float = _float(os.getenv("AI_VALIDATION_MIN_CONFIDENCE", "0.60"), 0.60)
+    AI_VALIDATION_MAX_RISK_FLAGS: int = _int(os.getenv("AI_VALIDATION_MAX_RISK_FLAGS", "3"), 3)
+    AI_VALIDATION_TIMEOUT: float = _float(os.getenv("AI_VALIDATION_TIMEOUT", "30.0"), 30.0)
+    AI_MAX_CALLS_PER_SESSION: int = _int(os.getenv("AI_MAX_CALLS_PER_SESSION", "100"), 100)
+
+    # Milestone 11: Advanced Paper Trading
+    PAPER_TRAILING_STOP: bool = _bool(os.getenv("PAPER_TRAILING_STOP", "true"), True)
+    PAPER_BREAK_EVEN: bool = _bool(os.getenv("PAPER_BREAK_EVEN", "true"), True)
+    PAPER_TRAILING_ACTIVATION: float = _float(os.getenv("PAPER_TRAILING_ACTIVATION", "0.01"), 0.01)
+    PAPER_TRAILING_DISTANCE: float = _float(os.getenv("PAPER_TRAILING_DISTANCE", "0.005"), 0.005)
+    PAPER_BREAK_EVEN_ACTIVATION: float = _float(os.getenv("PAPER_BREAK_EVEN_ACTIVATION", "0.005"), 0.005)
+
+    # Milestone 13: Session/Heartbeat Control
+    SESSION_MODE: str = os.getenv("SESSION_MODE", "paper")  # paper, demo, live
+    SESSION_REQUIRE_FOREGROUND: bool = _bool(os.getenv("SESSION_REQUIRE_FOREGROUND", "true"), True)
+    SESSION_AUTO_STOP_BACKGROUND: bool = _bool(os.getenv("SESSION_AUTO_STOP_BACKGROUND", "true"), True)
+    SESSION_ALLOW_BACKGROUND_TRADING: bool = _bool(os.getenv("SESSION_ALLOW_BACKGROUND_TRADING", "false"), False)
+    SESSION_LIVE_CONFIRMATION: bool = _bool(os.getenv("SESSION_LIVE_CONFIRMATION", "true"), True)
+    SESSION_LIVE_MAX_DURATION: int = _int(os.getenv("SESSION_LIVE_MAX_DURATION", "3600"), 3600)
+
+    # Milestone 14: Broker Adapter
+    BROKER_ADAPTER: str = os.getenv("BROKER_ADAPTER", "paper")  # paper, mt5_demo, mt5_live
+    BROKER_HEALTH_CHECK_INTERVAL: int = _int(os.getenv("BROKER_HEALTH_CHECK_INTERVAL", "60"), 60)
+
+    # Milestone 15: Optional Hosted Worker
+    HOSTED_WORKER_ENABLED: bool = _bool(os.getenv("HOSTED_WORKER_ENABLED", "false"), False)
+    HOSTED_WORKER_URL: str = os.getenv("HOSTED_WORKER_URL", "")
+    HOSTED_WORKER_AUTH_TOKEN: str = os.getenv("HOSTED_WORKER_AUTH_TOKEN", "")
+    HOSTED_WORKER_HEARTBEAT: int = _int(os.getenv("HOSTED_WORKER_HEARTBEAT", "30"), 30)
+
+    # Milestone 16: Live Trading Infrastructure (disabled by default)
+    LIVE_INFRASTRUCTURE_ENABLED: bool = _bool(os.getenv("LIVE_INFRASTRUCTURE_ENABLED", "false"), False)
+    LIVE_BROKER_ADAPTER: str = os.getenv("LIVE_BROKER_ADAPTER", "")
+    LIVE_ACCOUNT_VERIFICATION: bool = _bool(os.getenv("LIVE_ACCOUNT_VERIFICATION", "true"), True)
+    LIVE_RISK_PROFILE: str = os.getenv("LIVE_RISK_PROFILE", "conservative")  # conservative, moderate, aggressive
+    LIVE_EMERGENCY_STOP_ENABLED: bool = _bool(os.getenv("LIVE_EMERGENCY_STOP_ENABLED", "true"), True)
+
     @classmethod
     def validate(cls) -> list[str]:
         """Return list of validation errors. Empty list means OK."""
@@ -208,4 +259,13 @@ class Config:
             "COINSPH_API_BASE_URL": cls.COINSPH_API_BASE_URL,
             "M7_ENABLED": cls.M7_ENABLED,
             "M7_RISK_PERCENT": cls.M7_RISK_PERCENT,
+            "TERMINAL_ENABLED": cls.TERMINAL_ENABLED,
+            "MULTI_STRATEGY_ENABLED": cls.MULTI_STRATEGY_ENABLED,
+            "AI_VALIDATION_ENABLED": cls.AI_VALIDATION_ENABLED,
+            "PAPER_TRAILING_STOP": cls.PAPER_TRAILING_STOP,
+            "SESSION_MODE": cls.SESSION_MODE,
+            "BROKER_ADAPTER": cls.BROKER_ADAPTER,
+            "HOSTED_WORKER_ENABLED": cls.HOSTED_WORKER_ENABLED,
+            "LIVE_INFRASTRUCTURE_ENABLED": cls.LIVE_INFRASTRUCTURE_ENABLED,
+            "LIVE_TRADING": cls.LIVE_TRADING,
         }

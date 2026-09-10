@@ -568,7 +568,15 @@ class TestMT5NoCredentials:
     def test_api_no_execution_endpoints(self):
         """API has no endpoints for order execution."""
         from api_server import app
-        routes = [route.path for route in app.routes]
+        routes = []
+        for route in app.routes:
+            if hasattr(route, 'path'):
+                routes.append(route.path)
+            elif hasattr(route, 'routes'):
+                # It's an included router, check its routes
+                for subroute in route.routes:
+                    if hasattr(subroute, 'path'):
+                        routes.append(subroute.path)
         assert "/api/mt5/buy" not in routes
         assert "/api/mt5/sell" not in routes
         assert "/api/mt5/execute" not in routes
