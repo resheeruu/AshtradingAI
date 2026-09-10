@@ -41,31 +41,34 @@ jobs:
       - name: Write local.properties for CI
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Diagnose environment
+        run: |
+          java -version
+          ./gradlew --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          adb --version || true
+          ls -la "$ANDROID_HOME" || true
+          ls -la android
+          ls -la android/gradle/wrapper
+          cat android/local.properties
+          cat android/gradle.properties
 
       - name: Build debug APK
         working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 > /tmp/gradle-output.txt || true
-          echo "BUILD_EXIT=$?" >> /tmp/gradle-output.txt
-          echo "--- ENVIRONMENT ---" >> /tmp/gradle-output.txt
-          echo "JAVA_HOME=$JAVA_HOME" >> /tmp/gradle-output.txt
-          echo "ANDROID_HOME=$ANDROID_HOME" >> /tmp/gradle-output.txt
-          cat android/local.properties >> /tmp/gradle-output.txt
-          cat android/gradle.properties >> /tmp/gradle-output.txt
-          echo "--- FILES ---" >> /tmp/gradle-output.txt
-          ls -la app/build/outputs/apk/debug/ 2>/dev/null >> /tmp/gradle-output.txt || echo "No APK output" >> /tmp/gradle-output.txt
+        run: ./gradlew --no-daemon clean assembleDebug --stacktrace --info
 
-      - name: Upload build log
+      - name: Run lint
+        if: success()
+        working-directory: android
+        run: ./gradlew --no-daemon lint
+
+      - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: /tmp/gradle-output.txt
-          if-no-files-found: error
-          retention-days: 5
+          name: lint-report
+          path: android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
 
       - name: Upload debug APK
         if: success()
@@ -73,4 +76,4 @@ jobs:
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
+          if-no-files-found: error
