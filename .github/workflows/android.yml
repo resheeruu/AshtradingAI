@@ -29,22 +29,38 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: Install Android SDK platform and build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Show SDK environment
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la $ANDROID_HOME/ 2>/dev/null || echo "ANDROID_HOME not found"
+          ls -la $ANDROID_SDK_ROOT/ 2>/dev/null || echo "ANDROID_SDK_ROOT not found"
+          sdkmanager --list_installed 2>/dev/null || true
 
       - name: Remove Termux-specific aapt2 override
         run: sed -i '/android.aapt2FromMavenOverride/d' android/gradle.properties
+
+      - name: Write local.properties for CI
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Make Gradle wrapper executable
         run: chmod +x android/gradlew
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew clean assembleDebug
+        run: ./gradlew clean assembleDebug --stacktrace --no-daemon
 
       - name: Run lint
+        if: success()
         working-directory: android
-        run: ./gradlew lint
+        run: ./gradlew lint --no-daemon
 
       - name: Upload lint report
         if: always()
@@ -52,8 +68,10 @@ jobs:
         with:
           name: lint-report
           path: android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
 
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
