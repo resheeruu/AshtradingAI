@@ -44,9 +44,28 @@ jobs:
       - name: Write local.properties for CI
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
+      - name: Debug environment
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "No platforms"
+          ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "No build-tools"
+          cat android/local.properties
+          cat android/gradle.properties
+
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew clean assembleDebug --no-daemon
+        run: |
+          ./gradlew clean assembleDebug --no-daemon 2>&1 | tee /tmp/gradle-output.txt
+          BUILD_EXIT=${PIPESTATUS[0]}
+          echo "Build exit code: $BUILD_EXIT"
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "::error::Gradle build failed with exit code $BUILD_EXIT"
+            tail -100 /tmp/gradle-output.txt
+          fi
+          exit $BUILD_EXIT
 
       - name: Run lint
         if: success()
