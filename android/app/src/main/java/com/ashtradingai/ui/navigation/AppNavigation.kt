@@ -25,9 +25,10 @@ fun AshtradingAINavigation(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = when (currentScreen) {
+                Text(
+                    text = when (currentScreen) {
                             Screen.Dashboard.route -> "Dashboard"
+                            Screen.Terminal.route -> "Terminal"
                             Screen.Signals.route -> "Signals"
                             Screen.Strategies.route -> "Strategies"
                             Screen.Experiments.route -> "Experiments"
@@ -46,6 +47,7 @@ fun AshtradingAINavigation(
                             Screen.Risk.route -> "Risk"
                             Screen.Journal.route -> "Journal"
                             Screen.Performance.route -> "Performance"
+                            Screen.Backtest.route -> "Backtest"
                             else -> "AshtradingAI"
                         },
                         color = TextPrimary
@@ -106,6 +108,10 @@ fun AshtradingAINavigation(
         ) {
             when (currentScreen) {
                 Screen.Dashboard.route -> DashboardScreen(uiState)
+                Screen.Terminal.route -> TerminalConsoleScreen(
+                    uiState = uiState,
+                    onExecuteCommand = { command -> viewModel?.executeTerminalCommand(command) }
+                )
                 Screen.Signals.route -> SignalsScreen(uiState)
                 Screen.Strategies.route -> StrategiesScreen(uiState)
                 Screen.Experiments.route -> ExperimentsScreen(uiState)
@@ -130,6 +136,7 @@ fun AshtradingAINavigation(
                 Screen.Risk.route -> RiskScreen(uiState)
                 Screen.Journal.route -> JournalScreen(uiState)
                 Screen.Performance.route -> PerformanceScreen(uiState)
+                Screen.Backtest.route -> BacktestScreen(uiState)
             }
         }
     }

@@ -309,3 +309,155 @@ data class RiskStatus(
     val total_exposure: Double = 0.0,
     val config: Map<String, Any> = emptyMap()
 )
+
+// ── M17 Terminal Models ──────────────────────────────────────────────
+
+data class TerminalDashboard(
+    val mode: String = "paper",
+    val phone: PhoneStatus = PhoneStatus(),
+    val engine: EngineStatus = EngineStatus(),
+    val strategy: StrategyStatus = StrategyStatus(),
+    val risk: RiskDashboard = RiskDashboard(),
+    val positions: PositionSummary = PositionSummary(),
+    val pnl: PnLSummary = PnLSummary(),
+    val last_ai_decision: LastAIDecision = LastAIDecision(),
+    val timestamp: Double = 0.0
+)
+
+data class PhoneStatus(
+    val session_active: Boolean = false,
+    val state: String = "UNKNOWN",
+    val app_foreground: Boolean = false,
+    val network_connected: Boolean = false,
+    val broker_connected: Boolean = false
+)
+
+data class EngineStatus(
+    val strategies_loaded: Int = 0,
+    val ai_validation: Boolean = false,
+    val risk_engine: Boolean = false,
+    val paper_trading: Boolean = false
+)
+
+data class StrategyStatus(
+    val active: List<StrategyInfo> = emptyList(),
+    val selected: String = "",
+    val mode: String = "ai_select"
+)
+
+data class RiskDashboard(
+    val kill_switch: Boolean = false,
+    val trades_today: Int = 0,
+    val daily_pnl: Double = 0.0,
+    val consecutive_losses: Int = 0,
+    val max_positions: Int = 3,
+    val open_positions: Int = 0
+)
+
+data class PositionSummary(
+    val open: Int = 0,
+    val total_exposure: Double = 0.0,
+    val unrealized_pnl: Double = 0.0
+)
+
+data class PnLSummary(
+    val today: Double = 0.0,
+    val week: Double = 0.0,
+    val month: Double = 0.0,
+    val total: Double = 0.0,
+    val drawdown: Double = 0.0
+)
+
+data class LastAIDecision(
+    val timestamp: String = "",
+    val symbol: String = "",
+    val decision: String = "",
+    val confidence: Double = 0.0,
+    val reason: String = ""
+)
+
+data class TradingModeInfo(
+    val mode: String = "paper",
+    val allowed_modes: List<String> = emptyList(),
+    val live_allowed: Boolean = false,
+    val live_requires_confirmation: Boolean = true,
+    val safety: SafetyStatus = SafetyStatus(),
+    val switch_history: List<ModeSwitch> = emptyList()
+)
+
+data class ModeSwitch(
+    val from_mode: String = "",
+    val to_mode: String = "",
+    val timestamp: String = "",
+    val success: Boolean = false
+)
+
+data class TerminalCommand(
+    val name: String = "",
+    val description: String = "",
+    val params: List<String> = emptyList()
+)
+
+data class TerminalCommandResult(
+    val status: String = "",
+    val message: String = "",
+    val data: Map<String, Any> = emptyMap()
+)
+
+data class TerminalHeartbeat(
+    val status: String = "",
+    val timestamp: Double = 0.0,
+    val session_active: Boolean = false,
+    val state: String = ""
+)
+
+data class BacktestResult(
+    val strategy_id: String = "",
+    val symbol: String = "",
+    val timeframe: String = "",
+    val candles: Int = 0,
+    val status: String = "",
+    val results: BacktestMetrics = BacktestMetrics()
+)
+
+data class BacktestMetrics(
+    val net_pnl: Double = 0.0,
+    val win_rate: Double = 0.0,
+    val profit_factor: Double = 0.0,
+    val max_drawdown: Double = 0.0,
+    val sharpe: Double = 0.0,
+    val total_trades: Int = 0
+)
+
+data class WalkForwardResult(
+    val strategy_id: String = "",
+    val symbol: String = "",
+    val train_period: Int = 0,
+    val validation_period: Int = 0,
+    val test_period: Int = 0,
+    val status: String = "",
+    val results: WalkForwardMetrics = WalkForwardMetrics()
+)
+
+data class WalkForwardMetrics(
+    val in_sample_sharpe: Double = 0.0,
+    val out_of_sample_sharpe: Double = 0.0,
+    val overfitting_ratio: Double = 0.0,
+    val regime_performance: Map<String, Any> = emptyMap()
+)
+
+data class JournalEntry(
+    val trade_id: String = "",
+    val timestamp: String = "",
+    val symbol: String = "",
+    val side: String = "",
+    val entry_price: Double = 0.0,
+    val exit_price: Double? = null,
+    val quantity: Double = 0.0,
+    val pnl: Double? = null,
+    val fee: Double = 0.0,
+    val strategy_id: String = "",
+    val ai_decision: String = "",
+    val risk_check: String = "",
+    val notes: String = ""
+)

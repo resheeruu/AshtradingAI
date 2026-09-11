@@ -215,6 +215,190 @@ class ApiClient(
         @Suppress("UNCHECKED_CAST")
         map["config"] as? Map<String, Any> ?: emptyMap()
     }
+
+    // ── M17 Terminal API Methods ──────────────────────────────────────
+
+    suspend fun getTerminalDashboard(): TerminalDashboard = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/dashboard")
+        gson.fromJson(json, TerminalDashboard::class.java)
+    }
+
+    suspend fun getTradingMode(): TradingModeInfo = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/mode")
+        gson.fromJson(json, TradingModeInfo::class.java)
+    }
+
+    suspend fun switchTradingMode(mode: String, confirmation: String = ""): TerminalCommandResult = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf("target_mode" to mode, "confirmation" to confirmation))
+        val json = post("/api/terminal/mode/switch", body)
+        gson.fromJson(json, TerminalCommandResult::class.java)
+    }
+
+    suspend fun getTerminalCommands(): List<TerminalCommand> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/commands")
+        val type = object : TypeToken<Map<String, List<TerminalCommand>>>() {}.type
+        val map: Map<String, List<TerminalCommand>> = gson.fromJson(json, type)
+        map["commands"] ?: emptyList()
+    }
+
+    suspend fun executeTerminalCommand(command: String, args: Map<String, Any> = emptyMap()): TerminalCommandResult = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf("command" to command, "args" to args))
+        val json = post("/api/terminal/execute", body)
+        gson.fromJson(json, TerminalCommandResult::class.java)
+    }
+
+    suspend fun getTerminalHeartbeat(): TerminalHeartbeat = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/heartbeat")
+        gson.fromJson(json, TerminalHeartbeat::class.java)
+    }
+
+    suspend fun getSessionStatus(): Map<String, Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/session/status")
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun controlSession(action: String): TerminalCommandResult = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf("action" to action))
+        val json = post("/api/terminal/session/control", body)
+        gson.fromJson(json, TerminalCommandResult::class.java)
+    }
+
+    suspend fun startSession(mode: String, strategyId: String = ""): TerminalCommandResult = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf("mode" to mode, "strategy_id" to strategyId))
+        val json = post("/api/terminal/session/start", body)
+        gson.fromJson(json, TerminalCommandResult::class.java)
+    }
+
+    suspend fun getTerminalStrategies(): List<StrategyRegistryEntry> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/strategies/list")
+        val type = object : TypeToken<Map<String, List<StrategyRegistryEntry>>>() {}.type
+        val map: Map<String, List<StrategyRegistryEntry>> = gson.fromJson(json, type)
+        map["strategies"] ?: emptyList()
+    }
+
+    suspend fun getStrategyDetail(strategyId: String): StrategyRegistryEntry = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/strategies/$strategyId")
+        gson.fromJson(json, StrategyRegistryEntry::class.java)
+    }
+
+    suspend fun selectStrategies(symbol: String, timeframe: String, regime: String? = null): Map<String, Any> = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf("symbol" to symbol, "timeframe" to timeframe, "regime" to regime))
+        val json = post("/api/terminal/strategies/select", body)
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun validateSignal(signal: SignalInfo): Map<String, Any> = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf(
+            "signal_id" to signal.id,
+            "symbol" to signal.symbol,
+            "direction" to signal.direction,
+            "confidence" to (signal.confidence ?: 0.0),
+            "entry" to (signal.price ?: 0.0),
+            "stop_loss" to signal.stop_loss,
+            "take_profit" to signal.take_profit,
+            "strategy_id" to ""
+        ))
+        val json = post("/api/terminal/signals/validate", body)
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun getRiskStatus(): RiskStatus = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/risk/status")
+        gson.fromJson(json, RiskStatus::class.java)
+    }
+
+    suspend fun checkRisk(symbol: String, direction: String, confidence: Double, entry: Double): Map<String, Any> = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf(
+            "symbol" to symbol,
+            "direction" to direction,
+            "confidence" to confidence,
+            "entry" to entry
+        ))
+        val json = post("/api/terminal/risk/check", body)
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun toggleKillSwitch(): TerminalCommandResult = withContext(Dispatchers.IO) {
+        val json = post("/api/terminal/risk/kill-switch", "")
+        gson.fromJson(json, TerminalCommandResult::class.java)
+    }
+
+    suspend fun getPaperStatus(): Map<String, Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/paper/status")
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun getPaperPositions(): List<PositionInfo> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/paper/positions")
+        val type = object : TypeToken<Map<String, List<PositionInfo>>>() {}.type
+        val map: Map<String, List<PositionInfo>> = gson.fromJson(json, type)
+        map["positions"] ?: emptyList()
+    }
+
+    suspend fun getPaperHistory(): List<TradeInfo> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/paper/history")
+        val type = object : TypeToken<Map<String, List<TradeInfo>>>() {}.type
+        val map: Map<String, List<TradeInfo>> = gson.fromJson(json, type)
+        map["trades"] ?: emptyList()
+    }
+
+    suspend fun getPaperStats(): Map<String, Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/paper/stats")
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun runBacktest(strategyId: String, symbol: String, timeframe: String = "H1", candles: Int = 500): BacktestResult = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf(
+            "strategy_id" to strategyId,
+            "symbol" to symbol,
+            "timeframe" to timeframe,
+            "candles" to candles
+        ))
+        val json = post("/api/terminal/backtest/run", body)
+        gson.fromJson(json, BacktestResult::class.java)
+    }
+
+    suspend fun runWalkForward(strategyId: String, symbol: String, timeframe: String = "H1"): WalkForwardResult = withContext(Dispatchers.IO) {
+        val body = gson.toJson(mapOf(
+            "strategy_id" to strategyId,
+            "symbol" to symbol,
+            "timeframe" to timeframe
+        ))
+        val json = post("/api/terminal/backtest/walk-forward", body)
+        gson.fromJson(json, WalkForwardResult::class.java)
+    }
+
+    suspend fun getJournalEntries(): List<JournalEntry> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/journal/entries")
+        val type = object : TypeToken<Map<String, List<JournalEntry>>>() {}.type
+        val map: Map<String, List<JournalEntry>> = gson.fromJson(json, type)
+        map["entries"] ?: emptyList()
+    }
+
+    suspend fun getJournalEntry(tradeId: String): JournalEntry? = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/journal/$tradeId")
+        val type = object : TypeToken<Map<String, Any?>>() {}.type
+        val map: Map<String, Any?> = gson.fromJson(json, type)
+        map["entry"] as? JournalEntry
+    }
+
+    suspend fun getTerminalHealth(): Map<String, Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/health")
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
+
+    suspend fun getTerminalHealthDetailed(): Map<String, Any> = withContext(Dispatchers.IO) {
+        val json = get("/api/terminal/health/detailed")
+        val type = object : TypeToken<Map<String, Any>>() {}.type
+        gson.fromJson(json, type)
+    }
 }
 
 class AuthException(message: String) : IOException(message)

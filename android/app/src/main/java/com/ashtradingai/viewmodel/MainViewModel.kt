@@ -41,7 +41,17 @@ data class AppUiState(
     val serverUrl: String = "http://10.0.2.2:8000",
     val apiToken: String = "",
     val autoRefreshEnabled: Boolean = true,
-    val autoRefreshIntervalSeconds: Int = 30
+    val autoRefreshIntervalSeconds: Int = 30,
+    // M17 Terminal fields
+    val terminalDashboard: TerminalDashboard = TerminalDashboard(),
+    val terminalCommandResult: TerminalCommandResult? = null,
+    val tradingMode: TradingModeInfo = TradingModeInfo(),
+    val terminalCommands: List<TerminalCommand> = emptyList(),
+    val terminalHeartbeat: TerminalHeartbeat = TerminalHeartbeat(),
+    val riskStatus: RiskStatus = RiskStatus(),
+    val backtestResult: BacktestResult? = null,
+    val walkForwardResult: WalkForwardResult? = null,
+    val journalEntries: List<JournalEntry> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -139,6 +149,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mt5Positions = MockData.mt5Positions,
             marketHealth = MockData.marketHealth,
             researchReports = MockData.researchReports,
+            terminalDashboard = TerminalDashboard(
+                mode = "paper",
+                phone = PhoneStatus(
+                    session_active = false,
+                    state = "OFFLINE",
+                    app_foreground = true,
+                    network_connected = true,
+                    broker_connected = true
+                ),
+                engine = EngineStatus(
+                    strategies_loaded = 5,
+                    ai_validation = true,
+                    risk_engine = true,
+                    paper_trading = true
+                ),
+                strategy = StrategyStatus(
+                    active = MockData.strategies.take(3),
+                    selected = "",
+                    mode = "ai_select"
+                ),
+                risk = RiskDashboard(
+                    kill_switch = false,
+                    trades_today = 0,
+                    daily_pnl = 0.0,
+                    consecutive_losses = 0,
+                    max_positions = 3,
+                    open_positions = 0
+                ),
+                positions = PositionSummary(
+                    open = 0,
+                    total_exposure = 0.0,
+                    unrealized_pnl = 0.0
+                ),
+                pnl = PnLSummary(
+                    today = 0.0,
+                    week = 0.0,
+                    month = 0.0,
+                    total = 0.0,
+                    drawdown = 0.0
+                ),
+                last_ai_decision = LastAIDecision(
+                    timestamp = "",
+                    symbol = "",
+                    decision = "",
+                    confidence = 0.0,
+                    reason = ""
+                ),
+                timestamp = System.currentTimeMillis() / 1000.0
+            ),
+            tradingMode = TradingModeInfo(
+                mode = "paper",
+                allowed_modes = listOf("paper", "demo"),
+                live_allowed = false,
+                live_requires_confirmation = true
+            ),
+            riskStatus = RiskStatus(
+                kill_switch = false,
+                trades_today = 0,
+                daily_pnl = 0.0,
+                consecutive_losses = 0,
+                total_exposure = 0.0
+            )
         )
     }
 
@@ -204,6 +276,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val reports = async(Dispatchers.IO) { apiClient.getResearchReports() }
                 val config = async(Dispatchers.IO) { apiClient.getConfig() }
                 val safety = async(Dispatchers.IO) { apiClient.getSafety() }
+                // M17 Terminal API calls
+                val dashboard = async(Dispatchers.IO) { apiClient.getTerminalDashboard() }
+                val mode = async(Dispatchers.IO) { apiClient.getTradingMode() }
+                val heartbeat = async(Dispatchers.IO) { apiClient.getTerminalHeartbeat() }
+                val risk = async(Dispatchers.IO) { apiClient.getRiskStatus() }
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -221,6 +298,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     researchReports = reports.await(),
                     config = config.await(),
                     systemStatus = _uiState.value.systemStatus.copy(safety = safety.await()),
+                    terminalDashboard = dashboard.await(),
+                    tradingMode = mode.await(),
+                    terminalHeartbeat = heartbeat.await(),
+                    riskStatus = risk.await(),
                     error = null
                 )
             } catch (e: AuthException) {
@@ -262,6 +343,196 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    // ── M17 Terminal Functions ──────────────────────────────────────
+
+    fun refreshTerminalDashboard() {
+        viewModelScope.launch {
+            try {
+                val dashboard = apiClient.getTerminalDashboard()
+                _uiState.value = _uiState.value.copy(terminalDashboard = dashboard)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Failed to load terminal dashboard: ${e.message}")
+            }
+        }
+    }
+
+    fun executeTerminalCommand(command: String) {
+        viewModelScope.launch {
+            try {
+                val result = apiClient.executeTerminalCommand(command)
+                _uiState.value = _uiState.value.copy(terminalCommandResult = result)
+                refreshTerminalDashboard()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    terminalCommandResult = TerminalCommandResult(
+                        status = "error",
+                        message = "Failed to execute command: ${e.message}"
+                    )
+                )
+            }
+        }
+    }
+
+    fun loadTradingMode() {
+        viewModelScope.launch {
+            try {
+                val mode = apiClient.getTradingMode()
+                _uiState.value = _uiState.value.copy(tradingMode = mode)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Failed to load trading mode: ${e.message}")
+            }
+        }
+    }
+
+    fun switchTradingMode(mode: String, confirmation: String = "") {
+        viewModelScope.launch {
+            try {
+                val result = apiClient.switchTradingMode(mode, confirmation)
+                _uiState.value = _uiState.value.copy(terminalCommandResult = result)
+                loadTradingMode()
+                refreshTerminalDashboard()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    terminalCommandResult = TerminalCommandResult(
+                        status = "error",
+                        message = "Failed to switch mode: ${e.message}"
+                    )
+                )
+            }
+        }
+    }
+
+    fun loadTerminalCommands() {
+        viewModelScope.launch {
+            try {
+                val commands = apiClient.getTerminalCommands()
+                _uiState.value = _uiState.value.copy(terminalCommands = commands)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Failed to load terminal commands: ${e.message}")
+            }
+        }
+    }
+
+    fun refreshTerminalHeartbeat() {
+        viewModelScope.launch {
+            try {
+                val heartbeat = apiClient.getTerminalHeartbeat()
+                _uiState.value = _uiState.value.copy(terminalHeartbeat = heartbeat)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Failed to get heartbeat: ${e.message}")
+            }
+        }
+    }
+
+    fun loadRiskStatus() {
+        viewModelScope.launch {
+            try {
+                val risk = apiClient.getRiskStatus()
+                _uiState.value = _uiState.value.copy(riskStatus = risk)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Failed to load risk status: ${e.message}")
+            }
+        }
+    }
+
+    fun toggleKillSwitch() {
+        viewModelScope.launch {
+            try {
+                val result = apiClient.toggleKillSwitch()
+                _uiState.value = _uiState.value.copy(terminalCommandResult = result)
+                loadRiskStatus()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    terminalCommandResult = TerminalCommandResult(
+                        status = "error",
+                        message = "Failed to toggle kill switch: ${e.message}"
+                    )
+                )
+            }
+        }
+    }
+
+    fun runBacktest(strategyId: String, symbol: String, timeframe: String = "H1", candles: Int = 500) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            try {
+                val result = apiClient.runBacktest(strategyId, symbol, timeframe, candles)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    backtestResult = result
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Backtest failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun runWalkForward(strategyId: String, symbol: String, timeframe: String = "H1") {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            try {
+                val result = apiClient.runWalkForward(strategyId, symbol, timeframe)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    walkForwardResult = result
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Walk-forward analysis failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun loadJournalEntries() {
+        viewModelScope.launch {
+            try {
+                val entries = apiClient.getJournalEntries()
+                _uiState.value = _uiState.value.copy(journalEntries = entries)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Failed to load journal entries: ${e.message}")
+            }
+        }
+    }
+
+    fun controlSession(action: String) {
+        viewModelScope.launch {
+            try {
+                val result = apiClient.controlSession(action)
+                _uiState.value = _uiState.value.copy(terminalCommandResult = result)
+                refreshTerminalDashboard()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    terminalCommandResult = TerminalCommandResult(
+                        status = "error",
+                        message = "Failed to control session: ${e.message}"
+                    )
+                )
+            }
+        }
+    }
+
+    fun startSession(mode: String, strategyId: String = "") {
+        viewModelScope.launch {
+            try {
+                val result = apiClient.startSession(mode, strategyId)
+                _uiState.value = _uiState.value.copy(terminalCommandResult = result)
+                refreshTerminalDashboard()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    terminalCommandResult = TerminalCommandResult(
+                        status = "error",
+                        message = "Failed to start session: ${e.message}"
+                    )
+                )
+            }
+        }
     }
 
     override fun onCleared() {

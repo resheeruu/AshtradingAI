@@ -32,7 +32,7 @@ fun DashboardScreen(uiState: AppUiState) {
         }
 
         item {
-            SectionHeader("System Status")
+            SectionHeader("MODE")
             Spacer(modifier = Modifier.height(4.dp))
         }
 
@@ -42,35 +42,20 @@ fun DashboardScreen(uiState: AppUiState) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatusCard(
-                    title = "API",
-                    value = uiState.systemStatus.api_status.uppercase(),
-                    valueColor = if (uiState.systemStatus.api_status == "healthy") StatusOnline else StatusError,
+                    title = "TRADING MODE",
+                    value = uiState.terminalDashboard.mode.uppercase(),
+                    valueColor = when (uiState.terminalDashboard.mode) {
+                        "paper" -> AccentBlue
+                        "demo" -> AccentGreen
+                        "live" -> AccentRed
+                        else -> TextMuted
+                    },
                     modifier = Modifier.weight(1f)
                 )
                 StatusCard(
-                    title = "DATABASE",
-                    value = uiState.systemStatus.database_status.uppercase(),
-                    valueColor = if (uiState.systemStatus.database_status == "connected") StatusOnline else StatusError,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatusCard(
-                    title = "MARKET DATA",
-                    value = uiState.marketHealth.status.ifEmpty { "UNKNOWN" },
-                    valueColor = if (uiState.marketHealth.status == "ONLINE") StatusOnline else StatusWarning,
-                    modifier = Modifier.weight(1f)
-                )
-                StatusCard(
-                    title = "MT5",
-                    value = if (uiState.mt5Status.enabled) "ENABLED" else "DISABLED",
-                    valueColor = if (uiState.mt5Status.enabled) StatusOnline else StatusDisabled,
+                    title = "SESSION",
+                    value = if (uiState.terminalDashboard.phone.session_active) "ACTIVE" else "INACTIVE",
+                    valueColor = if (uiState.terminalDashboard.phone.session_active) StatusOnline else StatusDisabled,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -78,7 +63,7 @@ fun DashboardScreen(uiState: AppUiState) {
 
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            SectionHeader("Account")
+            SectionHeader("PHONE")
         }
 
         item {
@@ -87,15 +72,112 @@ fun DashboardScreen(uiState: AppUiState) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatusCard(
-                    title = "BALANCE",
-                    value = "$${String.format("%.2f", uiState.account.balance)}",
-                    valueColor = AccentBlue,
+                    title = "STATE",
+                    value = uiState.terminalDashboard.phone.state,
+                    valueColor = when (uiState.terminalDashboard.phone.state) {
+                        "ONLINE" -> StatusOnline
+                        "OFFLINE" -> StatusDisabled
+                        "PAUSED" -> StatusWarning
+                        "KILLED" -> StatusError
+                        else -> TextMuted
+                    },
                     modifier = Modifier.weight(1f)
                 )
                 StatusCard(
-                    title = "EQUITY",
-                    value = "$${String.format("%.2f", uiState.account.equity)}",
-                    valueColor = AccentBlue,
+                    title = "NETWORK",
+                    value = if (uiState.terminalDashboard.phone.network_connected) "CONNECTED" else "DISCONNECTED",
+                    valueColor = if (uiState.terminalDashboard.phone.network_connected) StatusOnline else StatusError,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("ENGINE")
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "STRATEGIES",
+                    value = "${uiState.terminalDashboard.engine.strategies_loaded}",
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "AI VALIDATION",
+                    value = if (uiState.terminalDashboard.engine.ai_validation) "ENABLED" else "DISABLED",
+                    valueColor = if (uiState.terminalDashboard.engine.ai_validation) StatusOnline else StatusDisabled,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "RISK ENGINE",
+                    value = if (uiState.terminalDashboard.engine.risk_engine) "ACTIVE" else "INACTIVE",
+                    valueColor = if (uiState.terminalDashboard.engine.risk_engine) StatusOnline else StatusDisabled,
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "PAPER TRADING",
+                    value = if (uiState.terminalDashboard.engine.paper_trading) "ENABLED" else "DISABLED",
+                    valueColor = if (uiState.terminalDashboard.engine.paper_trading) StatusOnline else StatusDisabled,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("STRATEGY")
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "SELECTED",
+                    value = uiState.terminalDashboard.strategy.selected.ifEmpty { "NONE" },
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "MODE",
+                    value = uiState.terminalDashboard.strategy.mode.uppercase(),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("RISK")
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "KILL SWITCH",
+                    value = if (uiState.terminalDashboard.risk.kill_switch) "ARMED" else "OFF",
+                    valueColor = if (uiState.terminalDashboard.risk.kill_switch) StatusError else StatusOnline,
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "TRADES TODAY",
+                    value = "${uiState.terminalDashboard.risk.trades_today}",
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -108,13 +190,14 @@ fun DashboardScreen(uiState: AppUiState) {
             ) {
                 StatusCard(
                     title = "DAILY P/L",
-                    value = "$${String.format("%.2f", uiState.account.daily_pnl)}",
-                    valueColor = if (uiState.account.daily_pnl >= 0) AccentGreen else AccentRed,
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.risk.daily_pnl)}",
+                    valueColor = if (uiState.terminalDashboard.risk.daily_pnl >= 0) AccentGreen else AccentRed,
                     modifier = Modifier.weight(1f)
                 )
                 StatusCard(
-                    title = "POSITIONS",
-                    value = "${uiState.account.open_positions}",
+                    title = "CONSEC LOSSES",
+                    value = "${uiState.terminalDashboard.risk.consecutive_losses}",
+                    valueColor = if (uiState.terminalDashboard.risk.consecutive_losses > 0) StatusWarning else TextPrimary,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -122,151 +205,176 @@ fun DashboardScreen(uiState: AppUiState) {
 
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            SectionHeader("Safety Center")
+            SectionHeader("POSITIONS")
         }
 
         item {
-            SafetyIndicator(
-                label = "LIVE TRADING",
-                status = uiState.systemStatus.safety.live_trading
-            )
-        }
-        item {
-            SafetyIndicator(
-                label = "MT5 DEMO ONLY",
-                status = uiState.systemStatus.safety.mt5_demo_only
-            )
-        }
-        item {
-            SafetyIndicator(
-                label = "PAPER TRADING",
-                status = uiState.systemStatus.safety.paper_trading
-            )
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            SectionHeader("Active Strategies")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "OPEN",
+                    value = "${uiState.terminalDashboard.positions.open}",
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "EXPOSURE",
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.positions.total_exposure)}",
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
 
         item {
-            if (uiState.strategies.isEmpty()) {
-                EmptyState(title = "No strategies loaded", subtitle = "Run backtests to see strategy data")
-            } else {
-                uiState.strategies.forEach { strategy ->
-                    StrategyRow(strategy)
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "UNREALIZED P/L",
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.positions.unrealized_pnl)}",
+                    valueColor = if (uiState.terminalDashboard.positions.unrealized_pnl >= 0) AccentGreen else AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "MAX POSITIONS",
+                    value = "${uiState.terminalDashboard.risk.max_positions}",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            SectionHeader("Recent Signals")
+            SectionHeader("P&L")
         }
 
         item {
-            if (uiState.signals.isEmpty()) {
-                EmptyState(title = "No signals recorded", subtitle = "Signals appear when M7 generates them")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "TODAY",
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.pnl.today)}",
+                    valueColor = if (uiState.terminalDashboard.pnl.today >= 0) AccentGreen else AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "WEEK",
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.pnl.week)}",
+                    valueColor = if (uiState.terminalDashboard.pnl.week >= 0) AccentGreen else AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusCard(
+                    title = "MONTH",
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.pnl.month)}",
+                    valueColor = if (uiState.terminalDashboard.pnl.month >= 0) AccentGreen else AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+                StatusCard(
+                    title = "TOTAL",
+                    value = "$${String.format("%.2f", uiState.terminalDashboard.pnl.total)}",
+                    valueColor = if (uiState.terminalDashboard.pnl.total >= 0) AccentGreen else AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("DRAWDOWN")
+        }
+
+        item {
+            StatusCard(
+                title = "CURRENT DRAWDOWN",
+                value = "$${String.format("%.2f", uiState.terminalDashboard.pnl.drawdown)}",
+                valueColor = if (uiState.terminalDashboard.pnl.drawdown > 0) AccentRed else AccentGreen,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("LAST AI DECISION")
+        }
+
+        item {
+            if (uiState.terminalDashboard.last_ai_decision.timestamp.isEmpty()) {
+                EmptyState(title = "No AI decisions yet", subtitle = "AI decisions appear when signals are validated")
             } else {
-                uiState.signals.take(5).forEach { signal ->
-                    SignalRow(signal)
-                    Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(DarkSurface)
+                        .border(1.dp, DarkBorder, RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = uiState.terminalDashboard.last_ai_decision.symbol,
+                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = uiState.terminalDashboard.last_ai_decision.decision,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                ),
+                                color = when (uiState.terminalDashboard.last_ai_decision.decision) {
+                                    "APPROVE" -> AccentGreen
+                                    "REJECT" -> AccentRed
+                                    "HOLD" -> AccentYellow
+                                    else -> TextMuted
+                                }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Confidence: ${String.format("%.1f%%", uiState.terminalDashboard.last_ai_decision.confidence * 100)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                            Text(
+                                text = uiState.terminalDashboard.last_ai_decision.timestamp,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextMuted
+                            )
+                        }
+                        if (uiState.terminalDashboard.last_ai_decision.reason.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = uiState.terminalDashboard.last_ai_decision.reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
                 }
             }
         }
 
         item { Spacer(modifier = Modifier.height(16.dp)) }
-    }
-}
-
-@Composable
-private fun StrategyRow(strategy: com.ashtradingai.data.model.StrategyInfo) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(DarkSurface)
-            .border(1.dp, DarkBorder, RoundedCornerShape(8.dp))
-            .padding(12.dp)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = strategy.name,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                    color = TextPrimary
-                )
-                EnvironmentBadge(strategy.sample_classification)
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Signals: ${strategy.signal_count}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
-                )
-                Text(
-                    text = "Status: ${strategy.status}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (strategy.status == "ACTIVE") StatusOnline else StatusDisabled
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SignalRow(signal: com.ashtradingai.data.model.SignalInfo) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(DarkSurface)
-            .border(1.dp, DarkBorder, RoundedCornerShape(8.dp))
-            .padding(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = signal.symbol,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    color = TextPrimary
-                )
-                Text(
-                    text = signal.candle_timestamp,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = signal.direction,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    color = if (signal.direction == "LONG") AccentGreen else AccentRed
-                )
-                if (signal.price != null) {
-                    Text(
-                        text = "$${String.format("%.2f", signal.price)}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = TextSecondary
-                    )
-                }
-            }
-        }
     }
 }

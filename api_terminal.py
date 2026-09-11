@@ -444,3 +444,224 @@ async def get_detailed_health():
             "session": {"status": "inactive", "mode": "paper"},
         },
     }
+
+
+# ── M17 Terminal Endpoints ────────────────────────────────────────────
+
+@router.get("/dashboard")
+async def get_terminal_dashboard():
+    """Get terminal dashboard data (M17)."""
+    from src.strategy.registry import get_registry
+    from src.risk.advanced import AdvancedRiskEngine
+    from src.engine.phone_session import PhoneSessionManager
+
+    registry = get_registry()
+    risk_engine = AdvancedRiskEngine()
+    session = PhoneSessionManager()
+
+    summary = registry.get_registry_summary()
+    risk_status = risk_engine.get_status()
+    session_status = session.get_status()
+
+    return {
+        "mode": "paper",
+        "phone": {
+            "session_active": session_status.get("is_active", False),
+            "state": session_status.get("activity", {}).get("state", "UNKNOWN"),
+            "app_foreground": session_status.get("activity", {}).get("app_foreground", False),
+            "network_connected": session_status.get("activity", {}).get("network_connected", True),
+            "broker_connected": session_status.get("activity", {}).get("broker_connected", True),
+        },
+        "engine": {
+            "strategies_loaded": summary.get("total_strategies", 0),
+            "ai_validation": True,
+            "risk_engine": True,
+            "paper_trading": True,
+        },
+        "strategy": {
+            "active": summary.get("strategies", [])[:3] if summary.get("strategies") else [],
+            "selected": "",
+            "mode": "ai_select",
+        },
+        "risk": {
+            "kill_switch": risk_status.get("kill_switch", False),
+            "trades_today": risk_status.get("trades_today", 0),
+            "daily_pnl": risk_status.get("daily_pnl", 0.0),
+            "consecutive_losses": risk_status.get("consecutive_losses", 0),
+            "max_positions": risk_status.get("max_positions", 3),
+            "open_positions": risk_status.get("open_positions", 0),
+        },
+        "positions": {
+            "open": risk_status.get("open_positions", 0),
+            "total_exposure": 0.0,
+            "unrealized_pnl": 0.0,
+        },
+        "pnl": {
+            "today": 0.0,
+            "week": 0.0,
+            "month": 0.0,
+            "total": 0.0,
+            "drawdown": 0.0,
+        },
+        "last_ai_decision": {
+            "timestamp": "",
+            "symbol": "",
+            "decision": "",
+            "confidence": 0.0,
+            "reason": "",
+        },
+        "timestamp": time.time(),
+    }
+
+
+@router.get("/mode")
+async def get_trading_mode():
+    """Get current trading mode and safety status (M17)."""
+    from src.config import Config
+    config = Config()
+
+    return {
+        "mode": "paper",
+        "allowed_modes": ["paper", "demo"],
+        "live_allowed": False,
+        "live_requires_confirmation": True,
+        "safety": {
+            "live_trading": config.LIVE_TRADING,
+            "mt5_demo_only": config.MT5_DEMO_ONLY,
+            "mt5_demo_trading_enabled": config.MT5_DEMO_TRADING_ENABLED,
+        },
+        "switch_history": [],
+    }
+
+
+class ModeSwitchRequest(BaseModel):
+    target_mode: str  # paper, demo, live
+    confirmation: str = ""  # must be "I_CONFIRM" for live mode
+
+
+@router.post("/mode/switch")
+async def switch_trading_mode(request: ModeSwitchRequest):
+    """Switch trading mode with safety validation (M17)."""
+    from src.config import Config
+    config = Config()
+
+    if request.target_mode == "live":
+        if not config.LIVE_TRADING:
+            return {
+                "status": "error",
+                "message": "Live trading is disabled. Set LIVE_TRADING=true to enable.",
+                "current_mode": "paper",
+            }
+        if request.confirmation != "I_CONFIRM":
+            return {
+                "status": "error",
+                "message": "Live mode requires confirmation. Send confirmation='I_CONFIRM'.",
+                "current_mode": "paper",
+            }
+
+    return {
+        "status": "switched",
+        "previous_mode": "paper",
+        "current_mode": request.target_mode,
+        "message": f"Switched to {request.target_mode} mode",
+    }
+
+
+@router.get("/commands")
+async def list_terminal_commands():
+    """List available terminal commands (M17)."""
+    return {
+        "commands": [
+            {"name": "start", "description": "Start trading session", "params": ["mode"]},
+            {"name": "stop", "description": "Stop trading session", "params": []},
+            {"name": "pause", "description": "Pause new trades", "params": []},
+            {"name": "resume", "description": "Resume trading", "params": []},
+            {"name": "status", "description": "Show session status", "params": []},
+            {"name": "switch", "description": "Switch trading mode", "params": ["mode"]},
+            {"name": "risk", "description": "Show risk status", "params": []},
+            {"name": "kill", "description": "Toggle kill switch", "params": []},
+            {"name": "positions", "description": "Show open positions", "params": []},
+            {"name": "trades", "description": "Show recent trades", "params": ["limit"]},
+            {"name": "backtest", "description": "Run backtest", "params": ["strategy", "symbol"]},
+            {"name": "journal", "description": "Show trade journal", "params": ["limit"]},
+            {"name": "help", "description": "Show this help", "params": []},
+        ]
+    }
+
+
+class TerminalCommandRequest(BaseModel):
+    command: str
+    args: Dict[str, Any] = {}
+
+
+@router.post("/execute")
+async def execute_terminal_command(request: TerminalCommandRequest):
+    """Execute a terminal command (M17)."""
+    cmd = request.command.lower()
+
+    if cmd == "help":
+        return {
+            "status": "ok",
+            "message": "Available commands: start, stop, pause, resume, status, switch, risk, kill, positions, trades, backtest, journal, help",
+        }
+
+    if cmd == "status":
+        return await get_session_status()
+
+    if cmd == "start":
+        mode = request.args.get("mode", "paper")
+        return await start_session(SessionStartRequest(mode=mode))
+
+    if cmd == "stop":
+        return await control_session(SessionControlRequest(action="stop"))
+
+    if cmd == "pause":
+        return await control_session(SessionControlRequest(action="pause"))
+
+    if cmd == "resume":
+        return await control_session(SessionControlRequest(action="resume"))
+
+    if cmd == "kill":
+        return await toggle_kill_switch()
+
+    if cmd == "risk":
+        return await get_risk_status()
+
+    if cmd == "switch":
+        mode = request.args.get("mode", "paper")
+        return await switch_trading_mode(ModeSwitchRequest(target_mode=mode))
+
+    if cmd == "positions":
+        return await get_paper_positions()
+
+    if cmd == "trades":
+        limit = request.args.get("limit", 10)
+        return await get_paper_history()
+
+    if cmd == "backtest":
+        strategy = request.args.get("strategy", "")
+        symbol = request.args.get("symbol", "EURUSD")
+        return await run_backtest(BacktestRequest(strategy_id=strategy, symbol=symbol))
+
+    if cmd == "journal":
+        return await get_journal_entries()
+
+    return {
+        "status": "error",
+        "message": f"Unknown command: {cmd}. Type 'help' for available commands.",
+    }
+
+
+@router.get("/heartbeat")
+async def terminal_heartbeat():
+    """Terminal heartbeat endpoint (M17)."""
+    from src.engine.phone_session import PhoneSessionManager
+    session = PhoneSessionManager()
+    session_status = session.get_status()
+
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "session_active": session_status.get("is_active", False),
+        "state": session_status.get("activity", {}).get("state", "UNKNOWN"),
+    }

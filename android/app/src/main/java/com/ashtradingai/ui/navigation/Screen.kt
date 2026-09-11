@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     data object Dashboard : Screen("dashboard", "Dashboard", Icons.Default.Dashboard)
+    data object Terminal : Screen("terminal", "Terminal", Icons.Default.Terminal)
     data object Signals : Screen("signals", "Signals", Icons.Default.ShowChart)
     data object Strategies : Screen("strategies", "Strategies", Icons.Default.Science)
     data object Experiments : Screen("experiments", "Experiments", Icons.Default.Science)
@@ -24,18 +25,20 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     data object Risk : Screen("risk", "Risk", Icons.Default.Shield)
     data object Journal : Screen("journal", "Journal", Icons.Default.Book)
     data object Performance : Screen("performance", "Performance", Icons.Default.Analytics)
+    data object Backtest : Screen("backtest", "Backtest", Icons.Default.Science)
 }
 
 val bottomNavItems = listOf(
     Screen.Dashboard,
+    Screen.Terminal,
     Screen.Signals,
     Screen.Strategies,
     Screen.Positions,
-    Screen.Logs,
 )
 
 val allScreens = listOf(
     Screen.Dashboard,
+    Screen.Terminal,
     Screen.Signals,
     Screen.Strategies,
     Screen.Experiments,
@@ -54,4 +57,5 @@ val allScreens = listOf(
     Screen.Risk,
     Screen.Journal,
     Screen.Performance,
+    Screen.Backtest,
 )
